@@ -78,9 +78,9 @@ python -X utf8 scripts/make-icons.py
 ## 部署到 GitHub Pages
 
 App 只是靜態檔案。`.github/workflows/deploy.yml` 已設定好：push 到 `main` 分支就會自動建置並發佈到
-`https://<帳號>.github.io/<repo 名稱>/`。
+`https://berry600316-png.github.io/HomeExpense/`。
 
-1. 在 GitHub 建立 repo（例如 `HomeExpense`），把本機專案推上去。
+1. GitHub 儲存庫為 `berry600316-png/HomeExpense`，推送到 `main` 即部署。
 2. repo 的 Settings → Pages → Build and deployment → Source 選 **GitHub Actions**。
 3. 子路徑由 workflow 依 repo 名稱自動設定（`BASE_PATH=/<repo>/`）。若要在本機手動建置子路徑版本，
    Git Bash 下務必加 `MSYS_NO_PATHCONV=1`，否則 `/HomeExpense/` 會被改寫成 Windows 路徑（建置會直接報錯中止）：
