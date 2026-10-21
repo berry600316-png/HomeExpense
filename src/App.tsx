@@ -22,13 +22,13 @@ import { todayYmd } from './domain/ym'
 export function App() {
   useKeyboardInset()
   useEffect(() => {
-    if (IS_DEMO) void import('./db/demo').then((m) => m.seedDemo(todayYmd()))
+    if (import.meta.env.DEV && IS_DEMO) void import('./db/demo').then((m) => m.seedDemo(todayYmd()))
   }, [])
   return (
     <ToastProvider>
       <HashRouter>
         <div className="app-shell">
-          {IS_DEMO && <div className="demo-ribbon">示範資料（開發模式，與正式資料隔離）</div>}
+          {import.meta.env.DEV && IS_DEMO && <div className="demo-ribbon">示範資料（開發模式，與正式資料隔離）</div>}
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/settings" element={<SettingsPage />} />

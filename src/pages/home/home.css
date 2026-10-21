@@ -393,3 +393,7 @@
   font-size: var(--fs-xs);
   text-decoration: none;
 }
+
+.card-row-amt.t-danger {
+  color: var(--c-danger);
+}

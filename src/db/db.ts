@@ -51,10 +51,12 @@ export class HomeExpenseDB extends Dexie {
  * 示範模式：只在開發環境（npm run dev）且網址帶 ?demo 時啟用，使用另一個資料庫名稱，
  * 與正式資料完全隔離。正式建置時 import.meta.env.DEV 為 false，整段不會進入產物。
  */
-export const IS_DEMO =
-  import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo')
+const DEMO_PARAM = import.meta.env.DEV && typeof location !== 'undefined' ? new URLSearchParams(location.search).get('demo') : null
+export const IS_DEMO = DEMO_PARAM !== null
+/** ?demo=stress：大量項目、超長名稱、超大金額，用來驗收版面。 */
+export const IS_STRESS = DEMO_PARAM === 'stress'
 
-export const db = new HomeExpenseDB(IS_DEMO ? `${DB_NAME}-demo` : DB_NAME)
+export const db = new HomeExpenseDB(IS_STRESS ? `${DB_NAME}-demo-stress` : IS_DEMO ? `${DB_NAME}-demo` : DB_NAME)
 
 export const ALL_TABLES = [
   'cards',

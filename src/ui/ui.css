@@ -345,3 +345,21 @@
 .t-muted {
   color: var(--c-text-3);
 }
+
+a.btn,
+a.list-row,
+a.icon-btn,
+.list-row a,
+a.backup-hint {
+  text-decoration: none;
+  color: inherit;
+}
+
+a.btn-primary {
+  color: #fff;
+}
+
+a.btn-secondary,
+a.btn-ghost {
+  color: var(--c-accent);
+}

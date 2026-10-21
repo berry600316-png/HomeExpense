@@ -13,6 +13,8 @@ export function monthLabel(ym: string): string {
 }
 
 export function monthStatus(r: MonthResult): { tone: Tone; text: string } {
+  if (r.cards.length === 0 && r.fixed.length === 0 && r.extras.length === 0)
+    return { tone: 'muted', text: '還沒有資料，先從新增信用卡開始' }
   const parts: string[] = []
   if (r.missingCards > 0) parts.push(`${r.missingCards} 張卡未輸入`)
   if (r.pendingFixed > 0) parts.push(`${r.pendingFixed} 項待確認`)
