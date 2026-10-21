@@ -1,4 +1,7 @@
-/* 首頁：風格 C「深藍主視覺」（使用者 2026-10-21 選定） */
+/*
+ * 首頁：風格 C「深藍主視覺」＋下方兩欄 A1「大數字標頭、等高」（使用者 2026-10-21 選定）。
+ * 字級以長輩閱讀與截圖分享為準：項目名稱 16px、說明小字最小 13px。
+ */
 
 .home {
   display: flex;
@@ -26,8 +29,8 @@
   background: var(--c-surface);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   color: var(--c-accent);
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
 }
 
 /* ── 主卡 ── */
@@ -51,7 +54,7 @@
   height: var(--tap);
   display: grid;
   place-items: center;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   border-radius: 50%;
 }
 
@@ -60,8 +63,8 @@
 }
 
 .hero-month-label {
-  font-size: var(--fs-lg);
-  font-weight: 650;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: #fff;
   min-height: var(--tap);
   padding: 0 12px;
@@ -73,24 +76,24 @@
 }
 
 .hero-cap {
-  font-size: var(--fs-sm);
-  color: rgba(255, 255, 255, 0.65);
-  margin-top: 8px;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.82);
+  margin-top: 6px;
 }
 
 .hero-total {
-  font-size: clamp(2.1rem, 11vw, var(--fs-hero));
-  font-weight: 650;
-  line-height: 1.15;
+  font-size: clamp(2.3rem, 12.6vw, 3.125rem);
+  font-weight: 700;
+  line-height: 1.12;
   margin-top: 2px;
   letter-spacing: -0.02em;
 }
 
 .hero-total small {
-  font-size: 0.5em;
-  font-weight: 500;
-  opacity: 0.8;
-  margin-right: 3px;
+  font-size: 0.42em;
+  font-weight: 600;
+  opacity: 0.88;
+  margin-right: 5px;
   letter-spacing: 0;
 }
 
@@ -102,16 +105,21 @@
 }
 
 .hero-status {
+  display: inline-block;
   margin-top: 8px;
-  font-size: var(--fs-sm);
+  padding: 4px 11px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.9375rem;
+  font-weight: 600;
   line-height: 1.4;
 }
 
 .hero-status::before {
   content: '';
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   margin-right: 7px;
   vertical-align: 1px;
@@ -120,20 +128,22 @@
 
 .hero .tone-ok {
   color: #a8dcbc;
+  background: rgba(168, 220, 188, 0.16);
 }
 
 .hero .tone-warn {
-  color: #f3c77e;
+  color: #ffd99a;
+  background: rgba(240, 183, 90, 0.18);
 }
 
 .hero .tone-danger {
   color: #ffb4ab;
-  font-weight: 600;
+  background: rgba(255, 180, 171, 0.18);
 }
 
 .hero .tone-info,
 .hero .tone-muted {
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .hero-foot {
@@ -146,19 +156,18 @@
 .hero-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 0 12px;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.85);
-  font-size: var(--fs-xs);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
-.hero-pill.has-note {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+.hero-pill:active {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 /* ── 白色面板 ── */
@@ -171,41 +180,9 @@
 
 .panel-title {
   margin: 0 0 2px;
-  font-size: var(--fs-sm);
+  font-size: 1.0625rem;
   font-weight: 700;
-  color: var(--c-accent);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.panel-title::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--c-accent);
-  flex: none;
-}
-
-.panel-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: -8px -8px 0 0;
-}
-
-.add-btn {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--c-accent);
-}
-
-.add-btn:active {
-  background: var(--c-accent-soft);
+  color: var(--c-text);
 }
 
 .panel-foot {
@@ -215,12 +192,12 @@
   border-top: 1px solid var(--c-line);
   margin-top: 4px;
   padding-top: 9px;
-  font-size: var(--fs-xs);
+  font-size: 0.875rem;
   color: var(--c-text-3);
 }
 
 .panel-foot .num {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--c-text-2);
 }
 
@@ -230,8 +207,8 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 60px;
-  padding: 10px 0;
+  min-height: 64px;
+  padding: 11px 0;
   text-align: left;
 }
 
@@ -251,19 +228,20 @@
 }
 
 .card-row-name {
-  font-size: 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .card-row-sub {
-  font-size: var(--fs-xs);
+  font-size: 0.84rem;
   margin-top: 2px;
   overflow-wrap: anywhere;
 }
 
 .card-row-amt {
-  font-size: 1.2rem;
-  font-weight: 650;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: var(--c-accent);
   text-align: right;
 }
@@ -274,23 +252,75 @@
   margin-right: -4px;
 }
 
-/* 下方左右兩欄：高度依內容自然延伸，不強制等高 */
+/* ── 下方左右兩欄：等高（使用者 2026-10-21 選定 A1，取代規格 5.6 的自然高度） ── */
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .panel-half {
-  padding: 13px 12px 11px;
+  padding: 13px 11px 11px;
   border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.half-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-line);
+}
+
+.half-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.half-total {
+  font-size: clamp(1.2rem, 6.2vw, 1.5rem);
+  font-weight: 700;
+  color: var(--c-accent);
+  line-height: 1.25;
+  margin-top: 2px;
+  /* 最後防線：極端金額仍放不下時換行，不撐破欄寬 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 金額位數多時縮小字級（numSizeClass），窄欄也不會撐破版面 */
+.half-total.is-long {
+  font-size: 1.15rem;
+}
+
+.half-total.is-xlong {
+  font-size: 0.9rem;
+}
+
+.hero-total.is-long {
+  font-size: clamp(1.9rem, 10.5vw, 2.6rem);
+}
+
+.hero-total.is-xlong {
+  font-size: 1.75rem;
+}
+
+.half-cap {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.half-cap .tone-warn {
+  font-weight: 700;
 }
 
 .mini-row {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   width: 100%;
   min-height: var(--tap);
   padding: 9px 0;
@@ -305,29 +335,76 @@
   opacity: 0.6;
 }
 
+/* 名稱與金額同一行；金額太長時整個換到下一行並靠右，不會被裁切 */
+.mini-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+
+/* 基準寬 4.5em：名稱在自己的寬度內換行，只有金額長到放不下時才整個換行 */
 .mini-name {
-  font-size: 0.84rem;
-  line-height: 1.3;
+  flex: 1 1 4.5em;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.35;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
+.mini-amt {
+  margin-left: auto;
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mini-amt.tone-warn {
+  font-size: 0.9375rem;
+}
+
+.mini-amt.tone-muted {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--c-text-3);
+}
+
 .mini-meta {
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
   line-height: 1.35;
   margin-top: 2px;
   overflow-wrap: anywhere;
 }
 
-.mini-amt {
-  font-size: 0.95rem;
-  font-weight: 650;
-  margin-top: 3px;
-  max-width: 100%;
-}
-
 .mini-row.is-quiet .mini-name {
   color: var(--c-text-3);
+}
+
+.half-spacer {
+  flex: 1;
+}
+
+.add-extra {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: var(--tap);
+  margin-top: 10px;
+  border-radius: 12px;
+  background: var(--c-accent-soft);
+  color: var(--c-accent-2);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.add-extra:active {
+  opacity: 0.7;
+}
+
+.tone-normal {
+  color: var(--c-text);
 }
 
 .tone-ok,
@@ -346,6 +423,44 @@
   font-weight: 600;
 }
 
+/* 本月備註（原本在主卡上，2026-10-21 移到這裡，截圖較乾淨） */
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--c-surface);
+  box-shadow: var(--shadow-card);
+  color: var(--c-text-3);
+  text-align: left;
+  font-size: 0.9375rem;
+}
+
+.note-row.has-note {
+  color: var(--c-text-2);
+}
+
+.note-row svg:first-child {
+  color: var(--c-accent-2);
+  flex: none;
+}
+
+.note-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-row .chev {
+  color: var(--c-text-4);
+  flex: none;
+}
+
 /* 空白狀態 */
 .empty {
   display: flex;
@@ -359,7 +474,7 @@
 
 .empty p {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: 0.9375rem;
 }
 
 .empty-sm {
@@ -371,11 +486,11 @@
 /* 很窄的螢幕（iPhone SE 1 代 320px）：金額縮小一級避免擠壓 */
 @media (max-width: 350px) {
   .mini-amt {
-    font-size: 0.88rem;
+    font-size: 0.94rem;
   }
 
   .card-row-amt {
-    font-size: 1.08rem;
+    font-size: 1.3rem;
   }
 }
 
@@ -396,4 +511,26 @@
 
 .card-row-amt.t-danger {
   color: var(--c-danger);
+}
+
+/* 分享給家人（ShareSheet） */
+.share-hint {
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
+  color: var(--c-text-2);
+  line-height: 1.5;
+}
+
+.share-wait {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--c-text-3);
+}
+
+.share-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }

@@ -10,9 +10,10 @@
   --c-line: #e8e4dc;
   --c-line-strong: #d9d3c7;
   --c-text: #1c1d21;
-  --c-text-2: #5d5f66;
-  --c-text-3: #8e9097;
-  --c-text-4: #b5b6bb;
+  /* 灰字 2026-10-21 加深一級：長輩閱讀與截圖分享（text-3 對白底對比 ≥ 4.5:1） */
+  --c-text-2: #44464d;
+  --c-text-3: #6b6d74;
+  --c-text-4: #a3a5ab;
   --c-accent: #1b2a4a;
   --c-accent-2: #2e4a80;
   --c-accent-soft: #e9edf5;
