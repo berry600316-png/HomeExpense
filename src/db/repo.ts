@@ -7,6 +7,7 @@
  */
 import type { MonthInput } from '../domain/compute'
 import { isValidAmount } from '../domain/money'
+import { isDueMonth } from '../domain/schedule'
 import {
   DEFAULT_REMINDER_DAYS,
   SETTING_KEYS,
@@ -53,6 +54,14 @@ function checkDay(d: number | null, label: string) {
   must(d === null || (Number.isInteger(d) && d >= 1 && d <= 31), `${label}需為 1–31`)
 }
 
+function checkToday(today: YMD) {
+  must(isValidYmd(today), '今天的日期格式錯誤')
+}
+
+function checkOrder(order: number | undefined) {
+  must(order === undefined || Number.isSafeInteger(order), '排序值需為整數')
+}
+
 function checkRange(startYm: YM, endYm: YM | null) {
   must(isValidYm(startYm), '起始月份格式錯誤')
   must(endYm === null || isValidYm(endYm), '停用月份格式錯誤')
@@ -85,6 +94,11 @@ export async function getSetting<T>(key: string, fallback: T, d: HomeExpenseDB =
 }
 
 export async function setSetting(key: string, value: unknown, d: HomeExpenseDB = defaultDb) {
+  if (key === SETTING_KEYS.reminderDaysBefore)
+    must(typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 31, '提醒天數需為 0–31')
+  else if (key === SETTING_KEYS.lastBackupAt)
+    must(typeof value === 'number' && Number.isFinite(value) && value > 0, '備份時間格式錯誤')
+  else must(false, `未知的設定項目：${key}`)
   await d.settings.put({ key, value })
 }
 
@@ -109,6 +123,7 @@ export async function createCard(input: CardInput, today: YMD, d: HomeExpenseDB 
   const name = cleanName(input.name, '卡片名稱')
   checkDay(input.dueDay, '繳款截止日')
   checkRange(input.startYm, null)
+  checkToday(today)
   const now = Date.now()
   return d.transaction('rw', d.cards, d.sources, async () => {
     const card: CreditCard = {
@@ -145,6 +160,8 @@ export async function updateCard(
   today: YMD,
   d: HomeExpenseDB = defaultDb,
 ): Promise<void> {
+  checkToday(today)
+  checkOrder(patch.order)
   await d.transaction('rw', d.cards, d.sources, async () => {
     const card = await d.cards.get(id)
     must(card, '找不到這張卡')
@@ -218,7 +235,8 @@ export async function deleteCard(id: ID, d: HomeExpenseDB = defaultDb): Promise<
 
 async function upsertBill(cardId: ID, dueYm: YM, patch: Partial<CardBill>, d: HomeExpenseDB) {
   must(isValidYm(dueYm), '月份格式錯誤')
-  await d.transaction('rw', d.cardBills, async () => {
+  await d.transaction('rw', d.cardBills, d.cards, async () => {
+    must(await d.cards.get(cardId), '找不到這張卡')
     const existing = await d.cardBills.where('[cardId+dueYm]').equals([cardId, dueYm]).first()
     if (existing) await d.cardBills.update(existing.id, { ...patch, updatedAt: Date.now() })
     else
@@ -391,6 +409,7 @@ export async function updateTemplate(
   insurance: InsuranceInput | null | undefined,
   d: HomeExpenseDB = defaultDb,
 ): Promise<void> {
+  checkOrder(patch.order)
   await d.transaction('rw', d.templates, d.insurance, d.sources, d.beneficiaries, async () => {
     const t = await d.templates.get(id)
     must(t, '找不到這個項目')
@@ -449,6 +468,7 @@ export async function confirmOccurrence(input: ConfirmInput, d: HomeExpenseDB = 
   must(isValidYmd(input.actualDate), '實際扣款日期格式錯誤')
   must(isValidAmount(input.amount), '金額需為 0 以上的整數')
   must(input.periodYm === null || isValidYm(input.periodYm), '預計月份格式錯誤')
+  must(typeof input.inCardTotal === 'boolean', '「包含在卡片總額」格式錯誤')
   return d.transaction('rw', d.occurrences, d.templates, d.sources, async () => {
     const t = await d.templates.get(input.templateId)
     must(t, '找不到這個項目')
@@ -458,6 +478,8 @@ export async function confirmOccurrence(input: ConfirmInput, d: HomeExpenseDB = 
     let existing: Occurrence | undefined
     if (input.periodYm !== null) {
       existing = await d.occurrences.where('[templateId+periodKey]').equals([input.templateId, input.periodYm]).first()
+      // 只能確認「到期月份」的期數；已存在的期數（例如週期改過之前延後的那期）仍可確認
+      must(existing || isDueMonth(t, input.periodYm), '這個月份不是該項目的到期月份')
     } else if (input.occurrenceId) {
       existing = await d.occurrences.get(input.occurrenceId)
       must(existing && existing.templateId === input.templateId, '找不到這筆紀錄')
@@ -496,6 +518,7 @@ export async function markOccurrence(
     const t = await d.templates.get(templateId)
     must(t && t.cycleMonths !== null, '不定期項目沒有「期」可以標記')
     const existing = await d.occurrences.where('[templateId+periodKey]').equals([templateId, periodYm]).first()
+    must(existing || isDueMonth(t, periodYm), '這個月份不是該項目的到期月份')
     const now = Date.now()
     await d.occurrences.put({
       id: existing?.id ?? newId(),

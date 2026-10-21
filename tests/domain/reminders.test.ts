@@ -34,6 +34,22 @@ describe('卡費截止提醒', () => {
     ])
   })
 
+  it('驗收回報 A15：逾期超過 3 個月仍持續提醒（只要起算日之後、未繳）', () => {
+    const c = card('台新信用卡', { dueDay: 15, dueFrom: '2026-01-01' })
+    const paidBills = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'].map((ym) =>
+      bill(c.id, ym, { paidDate: `${ym}-14` }),
+    )
+    const r = computeReminders('2026-10-21', [c], paidBills, 5)
+    expect(r.map((x) => x.dueDate)).toEqual(['2026-06-15', '2026-07-15', '2026-08-15', '2026-09-15', '2026-10-15'])
+  })
+
+  it('回溯上限 24 個月', () => {
+    const c = card('舊卡', { dueDay: 10, dueFrom: '2020-01-01' })
+    const r = computeReminders('2026-10-21', [c], [], 5)
+    expect(r[0]!.dueDate).toBe('2024-10-10')
+    expect(r).toHaveLength(25)
+  })
+
   it('按下已繳後不再提醒', () => {
     expect(computeReminders('2026-10-22', [taishin], [bill(taishin.id, '2026-10', { paidDate: '2026-10-22' })], 5)).toEqual([])
   })

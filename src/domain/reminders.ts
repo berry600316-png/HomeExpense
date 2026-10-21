@@ -2,7 +2,7 @@
  * 卡費截止提醒。與花費計算完全無關：「已繳」只記日期、不記金額。
  */
 import type { CardBill, CreditCard, ID, YM, YMD } from './types'
-import { addDays, addMonths, clampDay, diffDays, ymOf } from './ym'
+import { addDays, addMonths, clampDay, diffDays, monthsBetween, ymOf } from './ym'
 
 export interface BillReminder {
   cardId: ID
@@ -21,9 +21,13 @@ export function billDueDate(card: CreditCard, dueYm: YM, bill: CardBill | undefi
   return clampDay(dueYm, card.dueDay)
 }
 
+/** 逾期最多回溯幾個月（避免資料異常時無限迴圈；24 個月未繳已遠超實際情境）。 */
+export const MAX_LOOKBACK_MONTHS = 24
+
 /**
  * 今天需要提醒的卡費。
- * 檢查範圍：前 3 個月 ～ 下個月的截止日（下個月：例如 10/29 時，11/2 截止已在 5 天內）。
+ * 檢查範圍：從提醒起算月份（最多回溯 24 個月）～ 下個月的截止日
+ * （下個月：例如 10/29 時，11/2 截止已在 5 天內）。逾期未繳會一直提醒，直到按已繳。
  * 條件：未繳、截止日 >= 提醒起算日 dueFrom、今天 >= 截止日 − daysBefore。
  * 卡片停用（endYm）之後的截止日不提醒。
  */
@@ -39,7 +43,9 @@ export function computeReminders(
 
   for (const card of cards) {
     if (card.dueDay === null && !bills.some((b) => b.cardId === card.id && b.dueDateOverride)) continue
-    for (let i = -3; i <= 1; i++) {
+    const fromYm = card.dueFrom !== null ? ymOf(card.dueFrom) : card.startYm
+    const back = Math.min(MAX_LOOKBACK_MONTHS, Math.max(0, monthsBetween(fromYm, thisYm)))
+    for (let i = -back; i <= 1; i++) {
       const dueYm = addMonths(thisYm, i)
       if (card.endYm !== null && dueYm >= card.endYm) continue
       const bill = billMap.get(`${card.id}|${dueYm}`)

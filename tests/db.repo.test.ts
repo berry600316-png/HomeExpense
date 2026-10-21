@@ -240,6 +240,52 @@ describe('歸屬對象與付款來源', () => {
   })
 })
 
+describe('驗收回報：寫入驗證缺口', () => {
+  it('今天日期格式錯誤時拒絕新增／修改卡片（否則提醒會被靜默壓掉）', async () => {
+    await expect(repo.createCard({ ...cardInput('台新'), dueDay: 24 }, 'garbage', d)).rejects.toThrow('日期')
+    const c = await repo.createCard(cardInput('台新'), TODAY, d)
+    await expect(repo.updateCard(c.id, { dueDay: 24 }, '2026-02-31', d)).rejects.toThrow('日期')
+    expect((await d.cards.get(c.id))!.dueDay).toBeNull()
+  })
+
+  it('卡費繳款：卡片不存在時拒絕，不留孤兒紀錄', async () => {
+    await expect(repo.markBillPaid('nonexistent', '2026-10', '2026-10-22', d)).rejects.toThrow('找不到')
+    expect(await d.cardBills.count()).toBe(0)
+  })
+
+  it('排序值必須是整數', async () => {
+    const c = await repo.createCard(cardInput('台新'), TODAY, d)
+    await expect(repo.updateCard(c.id, { order: Number.NaN }, TODAY, d)).rejects.toThrow('排序')
+    const t = await repo.createTemplate(tplInput(), null, d)
+    await expect(repo.updateTemplate(t.id, { order: 1.5 }, undefined, d)).rejects.toThrow('排序')
+  })
+
+  it('設定值驗證：提醒天數 0–31 整數、未知鍵拒絕', async () => {
+    await expect(repo.setSetting('reminderDaysBefore', 'abc', d)).rejects.toThrow()
+    await expect(repo.setSetting('reminderDaysBefore', 40, d)).rejects.toThrow()
+    await expect(repo.setSetting('whatever', 1, d)).rejects.toThrow()
+    await repo.setSetting('reminderDaysBefore', 7, d)
+    expect(await repo.getReminderDays(d)).toBe(7)
+  })
+
+  it('只能確認／標記到期月份的期數；已存在的期數（週期改過）仍可處理', async () => {
+    const t = await repo.createTemplate(tplInput({ cycleMonths: 6, anchorYm: '2026-04' }), null, d)
+    const base = { templateId: t.id, periodYm: '2026-05', actualDate: '2026-05-05', amount: 1, sourceId: null, inCardTotal: true, note: '' }
+    await expect(repo.confirmOccurrence(base, d)).rejects.toThrow('到期月份')
+    await expect(repo.markOccurrence(t.id, '2026-05', 'deferred', '', d)).rejects.toThrow('到期月份')
+    await repo.markOccurrence(t.id, '2026-04', 'deferred', '', d)
+    await repo.updateTemplate(t.id, { cycleMonths: 12, anchorYm: '2026-01' }, undefined, d)
+    await repo.confirmOccurrence({ ...base, periodYm: '2026-04', actualDate: '2026-06-01' }, d)
+    expect((await d.occurrences.toArray()).map((o) => [o.periodYm, o.status])).toEqual([['2026-04', 'confirmed']])
+  })
+
+  it('inCardTotal 必須是布林值', async () => {
+    const t = await repo.createTemplate(tplInput(), null, d)
+    const bad = { templateId: t.id, periodYm: '2026-10', actualDate: '2026-10-05', amount: 1, sourceId: null, inCardTotal: 'yes' as unknown as boolean, note: '' }
+    await expect(repo.confirmOccurrence(bad, d)).rejects.toThrow()
+  })
+})
+
 describe('額外消費', () => {
   it('新增、修改（日期換月）、刪除', async () => {
     const e = await repo.saveExtra({ name: '現金購物', amount: 500, date: '2026-10-31', sourceId: null, note: '' }, null, d)
