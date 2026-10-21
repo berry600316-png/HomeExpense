@@ -140,6 +140,17 @@ export function diffDays(a: YMD, b: YMD): number {
   return dayNumber(b) - dayNumber(a)
 }
 
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+
+/** 星期幾（0 = 星期日）。1970-01-01 是星期四。 */
+export function weekdayOf(ymd: YMD): number {
+  return (((dayNumber(ymd) + 4) % 7) + 7) % 7
+}
+
+export function weekdayLabel(ymd: YMD): string {
+  return `週${WEEKDAYS[weekdayOf(ymd)]}`
+}
+
 export function isActiveIn(range: ActiveRange, ym: YM): boolean {
   return range.startYm <= ym && (range.endYm === null || ym < range.endYm)
 }

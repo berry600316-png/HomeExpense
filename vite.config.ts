@@ -20,11 +20,11 @@ export default defineConfig({
       injectRegister: false,
       // Service Worker 只控制本 App 的子路徑，不影響同網域其他專案。
       scope: base,
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-64.png', 'apple-touch-icon.png'],
       manifest: {
         id: base,
-        name: 'HomeExpense 每月支出',
-        short_name: 'HomeExpense',
+        name: '周家計帳簿',
+        short_name: '周家計帳簿',
         description: '每月整理一次的個人支出管理',
         lang: 'zh-Hant-TW',
         start_url: base,

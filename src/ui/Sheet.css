@@ -1,0 +1,138 @@
+.sheet-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--c-scrim);
+  animation: sheet-fade-in 0.24s ease both;
+}
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--kb, 0px);
+  margin: 0 auto;
+  max-width: 560px;
+  max-height: calc(100dvh - var(--safe-top) - 24px - var(--kb, 0px));
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+  border-radius: 22px 22px 0 0;
+  box-shadow: var(--shadow-sheet);
+  animation: sheet-slide-in 0.32s var(--ease) both;
+  transition: bottom 0.2s ease;
+}
+
+.is-closing .sheet {
+  animation: sheet-slide-out 0.24s ease-in both;
+}
+
+.is-closing .sheet-backdrop {
+  animation: sheet-fade-out 0.24s ease both;
+}
+
+.sheet-grip {
+  width: 38px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--c-line-strong);
+  margin: 8px auto 0;
+  flex: none;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-5);
+  flex: none;
+}
+
+.sheet-titles {
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.sheet-head p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+
+.sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--sp-2) var(--sp-5) var(--sp-5);
+}
+
+/* 沒有 footer 時，內容自己留出 Safe Area */
+.sheet-body:last-child {
+  padding-bottom: calc(var(--sp-5) + var(--safe-bottom));
+}
+
+.sheet-foot {
+  flex: none;
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + var(--safe-bottom));
+  border-top: 1px solid var(--c-line);
+  background: var(--c-bg);
+}
+
+.sheet-foot > * {
+  flex: 1;
+}
+
+@keyframes sheet-slide-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-slide-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet-backdrop,
+  .is-closing .sheet,
+  .is-closing .sheet-backdrop {
+    animation-duration: 0.01s;
+  }
+}

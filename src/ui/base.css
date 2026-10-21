@@ -70,3 +70,14 @@ textarea {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+.demo-ribbon {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fff3c4;
+  color: #6b5200;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+}
