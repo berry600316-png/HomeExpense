@@ -1,0 +1,38 @@
+.update-bar {
+  position: fixed;
+  left: calc(var(--safe-left) + var(--sp-4));
+  right: calc(var(--safe-right) + var(--sp-4));
+  bottom: calc(var(--safe-bottom) + var(--sp-4));
+  max-width: 528px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  background: var(--c-accent);
+  color: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sheet);
+  font-size: var(--fs-sm);
+  z-index: 60;
+}
+
+.update-bar span {
+  flex: 1;
+}
+
+.update-bar button {
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-sm);
+}
+
+.update-bar__later {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.update-bar__go {
+  background: #fff;
+  color: var(--c-accent);
+  font-weight: 600;
+}
