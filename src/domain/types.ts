@@ -23,6 +23,11 @@ export interface CreditCard extends ActiveRange {
   order: number
   /** 每月繳款截止日（1–31），null 表示不提醒。 */
   dueDay: number | null
+  /**
+   * 提醒起算日：設定或變更截止日當天。早於此日的截止日不提醒，
+   * 避免 10/21 新增一張「每月 15 日截止」的卡，立刻跳出 10/15「已逾期」。
+   */
+  dueFrom: YMD | null
   note: string
   createdAt: number
   updatedAt: number
