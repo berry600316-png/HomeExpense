@@ -79,7 +79,7 @@ export function CardMonthSheet({
       setError('金額只能是整數')
       return
     }
-    void save(negative ? -parsed : parsed)
+    void save(negative && parsed !== 0 ? -parsed : parsed)
   }
 
   const bill = lk.cardBillByKey.get(`${line.card.id}|${ym}`)
@@ -107,7 +107,15 @@ export function CardMonthSheet({
           <span>總額為負數（本月退款大於消費）</span>
         </label>
         <div className="inline-actions">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void save(0)} disabled={busy}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy}
+            onClick={() => {
+              if (line.raw !== null && line.raw !== 0 && !window.confirm(`目前已輸入 ${formatMoney(line.raw)}，確定改成本月無消費（$0）嗎？`)) return
+              void save(0)
+            }}
+          >
             本月無消費（$0）
           </button>
           {line.raw !== null && (
