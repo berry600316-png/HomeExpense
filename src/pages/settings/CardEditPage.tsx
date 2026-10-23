@@ -3,10 +3,21 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../db/db'
 import { canDeleteCard, createCard, deleteCard, updateCard } from '../../db/repo'
+import { DEFAULT_REMINDER_DAYS } from '../../domain/types'
 import { addMonths, currentYm, formatYmLabel, isValidYm, todayYmd } from '../../domain/ym'
 import { Field, TextArea, useFieldId } from '../../ui/fields'
 import { errorMessage, useToast } from '../../ui/Toast'
 import { Loading, PageHeader } from './common'
+
+/** 下拉選項：截止當天～14 天前；舊資料若超過 14 天（舊版最多 31），保留原值不被改掉。 */
+function remindOptions(current: number): number[] {
+  const base = Array.from({ length: 15 }, (_, i) => i)
+  return current > 14 ? [...base, current] : base
+}
+
+export function remindLabel(n: number): string {
+  return n === 0 ? '截止當天才提醒' : `截止前 ${n} 天開始提醒`
+}
 
 export function CardEditPage() {
   const { id } = useParams()
@@ -15,12 +26,13 @@ export function CardEditPage() {
   const toast = useToast()
   const card = useLiveQuery(() => (isNew || !id ? undefined : db.cards.get(id)), [id])
   const deletable = useLiveQuery(() => (isNew || !id ? false : canDeleteCard(id)), [id])
-  const ids = { name: useFieldId(), bank: useFieldId(), tag: useFieldId(), due: useFieldId(), start: useFieldId(), note: useFieldId(), end: useFieldId() }
+  const ids = { name: useFieldId(), bank: useFieldId(), tag: useFieldId(), due: useFieldId(), remind: useFieldId(), start: useFieldId(), note: useFieldId(), end: useFieldId() }
 
   const [name, setName] = useState('')
   const [bank, setBank] = useState('')
   const [tag, setTag] = useState('')
   const [dueDay, setDueDay] = useState<number | null>(null)
+  const [remindDays, setRemindDays] = useState(DEFAULT_REMINDER_DAYS)
   const [startYm, setStartYm] = useState(currentYm())
   const [note, setNote] = useState('')
   const [endYm, setEndYm] = useState('')
@@ -33,6 +45,7 @@ export function CardEditPage() {
     setBank(card.bank)
     setTag(card.tag)
     setDueDay(card.dueDay)
+    setRemindDays(card.remindDays)
     setStartYm(card.startYm)
     setNote(card.note)
     setEndYm(card.endYm ?? '')
@@ -49,10 +62,10 @@ export function CardEditPage() {
     try {
       const today = todayYmd()
       if (isNew) {
-        await createCard({ name, bank, tag, dueDay, note, startYm }, today)
+        await createCard({ name, bank, tag, dueDay, remindDays, note, startYm }, today)
         toast('已新增信用卡')
       } else {
-        await updateCard(id!, { name, bank, tag, dueDay, note, startYm, endYm: endYm || null }, today)
+        await updateCard(id!, { name, bank, tag, dueDay, remindDays, note, startYm, endYm: endYm || null }, today)
         toast('已儲存')
       }
       nav(-1)
@@ -109,7 +122,7 @@ export function CardEditPage() {
             <input id={ids.tag} className="input" value={tag} maxLength={20} onChange={(e) => setTag(e.target.value)} placeholder="例如：1234" />
           </Field>
         </div>
-        <Field label="繳款截止日" htmlFor={ids.due} hint="設定後，截止前幾天起每次打開 App 都會提醒，直到按「已繳」。個別月份可在首頁點卡片調整。">
+        <Field label="繳款截止日" htmlFor={ids.due} hint="個別月份的截止日可在首頁點卡片調整。">
           <select id={ids.due} className="select" value={dueDay ?? ''} onChange={(e) => setDueDay(e.target.value ? Number(e.target.value) : null)}>
             <option value="">不提醒</option>
             {Array.from({ length: 31 }, (_, i) => (
@@ -119,6 +132,21 @@ export function CardEditPage() {
             ))}
           </select>
         </Field>
+        {dueDay !== null && (
+          <Field
+            label="提前幾天提醒"
+            htmlFor={ids.remind}
+            hint="從這天開始，每次打開 App 都會提醒，直到按「已繳」；過了截止日還沒按，會顯示「已逾期」繼續提醒。"
+          >
+            <select id={ids.remind} className="select" value={remindDays} onChange={(e) => setRemindDays(Number(e.target.value))}>
+              {remindOptions(remindDays).map((n) => (
+                <option key={n} value={n}>
+                  {remindLabel(n)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="開始記錄的月份" htmlFor={ids.start} hint="這個月份之前不會要求輸入這張卡的總額。">
           <input id={ids.start} type="month" className="input" value={startYm} onChange={(e) => setStartYm(e.target.value)} />
         </Field>

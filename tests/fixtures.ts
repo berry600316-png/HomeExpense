@@ -21,6 +21,7 @@ export function card(name: string, over: Partial<CreditCard> = {}): CreditCard {
     order: seq,
     dueDay: null,
     dueFrom: null,
+    remindDays: 5,
     note: '',
     startYm: '2026-01',
     endYm: null,

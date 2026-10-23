@@ -28,6 +28,8 @@ export interface CreditCard extends ActiveRange {
    * 避免 10/21 新增一張「每月 15 日截止」的卡，立刻跳出 10/15「已逾期」。
    */
   dueFrom: YMD | null
+  /** 截止前幾天開始提醒（0 = 截止當天；0–31 整數）。每張卡各自設定（使用者 2026-10-23）。 */
+  remindDays: number
   note: string
   createdAt: number
   updatedAt: number
@@ -162,8 +164,19 @@ export interface SettingRow {
 }
 
 export const SETTING_KEYS = {
-  reminderDaysBefore: 'reminderDaysBefore',
   lastBackupAt: 'lastBackupAt',
 } as const
 
+/**
+ * 舊版（資料庫 v1／備份 v1）的全域提前天數設定鍵。新版改存在每張卡的 remindDays，
+ * 這個鍵只用於升級舊資料庫與還原舊備份時讀出舊值。
+ */
+export const LEGACY_REMINDER_DAYS_KEY = 'reminderDaysBefore'
+
+/** 新增卡片的預設提前天數，也是舊資料沒有設定時的退回值。 */
 export const DEFAULT_REMINDER_DAYS = 5
+export const MAX_REMINDER_DAYS = 31
+
+export function isValidRemindDays(n: unknown): n is number {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= MAX_REMINDER_DAYS
+}

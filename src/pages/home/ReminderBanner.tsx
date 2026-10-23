@@ -1,11 +1,8 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { BellRing, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { db } from '../../db/db'
-import { getReminderDays, markBillPaid } from '../../db/repo'
+import { markBillPaid } from '../../db/repo'
 import { computeReminders, type BillReminder } from '../../domain/reminders'
-import { DEFAULT_REMINDER_DAYS } from '../../domain/types'
 import { formatYmdShort, weekdayLabel } from '../../domain/ym'
 import type { AllData } from '../../hooks/useData'
 import { errorMessage, useToast } from '../../ui/Toast'
@@ -19,16 +16,12 @@ function whenText(r: BillReminder): string {
 
 /**
  * 卡費截止提醒（使用者決策 R1–R5）：
- * - 截止前 N 天起，每次「打開 App」（載入，或從背景回到前景）都跳全畫面提醒，直到按「已繳」。
+ * - 截止前 N 天起（N 由每張卡各自設定），每次「打開 App」（載入，或從背景回到前景）都跳全畫面提醒，直到按「已繳」。
  * - 「稍後」只關掉這一次；首頁頂端常駐提醒條。
  */
 export function ReminderBanner({ data, today }: { data: AllData; today: string }) {
   const toast = useToast()
-  const days = useLiveQuery(() => getReminderDays(db), [], DEFAULT_REMINDER_DAYS)
-  const reminders = useMemo(
-    () => computeReminders(today, data.cards, data.cardBills, days),
-    [today, data.cards, data.cardBills, days],
-  )
+  const reminders = useMemo(() => computeReminders(today, data.cards, data.cardBills), [today, data.cards, data.cardBills])
   const [snoozed, setSnoozed] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 

@@ -260,12 +260,49 @@ describe('驗收回報：寫入驗證缺口', () => {
     await expect(repo.updateTemplate(t.id, { order: 1.5 }, undefined, d)).rejects.toThrow('排序')
   })
 
-  it('設定值驗證：提醒天數 0–31 整數、未知鍵拒絕', async () => {
-    await expect(repo.setSetting('reminderDaysBefore', 'abc', d)).rejects.toThrow()
-    await expect(repo.setSetting('reminderDaysBefore', 40, d)).rejects.toThrow()
+  it('設定值驗證：舊的全域提醒天數已改成每張卡設定，寫入舊鍵與未知鍵都拒絕', async () => {
+    await expect(repo.setSetting('reminderDaysBefore', 7, d)).rejects.toThrow()
     await expect(repo.setSetting('whatever', 1, d)).rejects.toThrow()
-    await repo.setSetting('reminderDaysBefore', 7, d)
-    expect(await repo.getReminderDays(d)).toBe(7)
+  })
+
+  it('每張卡的提前天數：新增預設 5 天、可設 0–31 整數、不合法拒絕且不改資料', async () => {
+    const a = await repo.createCard(cardInput('預設卡'), TODAY, d)
+    expect(a.remindDays).toBe(5)
+    const b = await repo.createCard({ ...cardInput('一天卡'), remindDays: 1 }, TODAY, d)
+    expect((await d.cards.get(b.id))!.remindDays).toBe(1)
+    await repo.updateCard(b.id, { remindDays: 0 }, TODAY, d)
+    expect((await d.cards.get(b.id))!.remindDays).toBe(0)
+    await repo.updateCard(b.id, { remindDays: 31 }, TODAY, d)
+    expect((await d.cards.get(b.id))!.remindDays).toBe(31)
+    for (const bad of [-1, 32, 1.5, Number.NaN]) {
+      await expect(repo.createCard({ ...cardInput('壞卡'), remindDays: bad }, TODAY, d)).rejects.toThrow('提前提醒天數')
+      await expect(repo.updateCard(b.id, { remindDays: bad }, TODAY, d)).rejects.toThrow('提前提醒天數')
+    }
+    expect((await d.cards.get(b.id))!.remindDays).toBe(31)
+    expect(await d.cards.count()).toBe(2)
+  })
+
+  it('對調卡片順序：兩張卡互換 order', async () => {
+    const a = await repo.createCard(cardInput('A'), TODAY, d)
+    const b = await repo.createCard(cardInput('B'), TODAY, d)
+    await repo.swapCardOrder(a.id, b.id, d)
+    expect((await d.cards.orderBy('order').toArray()).map((c) => c.name)).toEqual(['B', 'A'])
+    await expect(repo.swapCardOrder(a.id, a.id, d)).rejects.toThrow()
+    await expect(repo.swapCardOrder(a.id, 'ghost', d)).rejects.toThrow('找不到')
+    expect((await d.cards.orderBy('order').toArray()).map((c) => c.name)).toEqual(['B', 'A'])
+  })
+
+  it('對調卡片順序是單一交易：第二筆寫入失敗時，第一筆也回滾（不會出現兩張同順位）', async () => {
+    const a = await repo.createCard(cardInput('A'), TODAY, d)
+    const b = await repo.createCard(cardInput('B'), TODAY, d)
+    const before = (await d.cards.toArray()).map((c) => [c.name, c.order])
+    const fail = function (_mods: object, key: unknown) {
+      if (key === b.id) throw new Error('模擬寫入失敗')
+    }
+    d.cards.hook('updating', fail)
+    await expect(repo.swapCardOrder(a.id, b.id, d)).rejects.toThrow('模擬寫入失敗')
+    d.cards.hook('updating').unsubscribe(fail)
+    expect((await d.cards.toArray()).map((c) => [c.name, c.order])).toEqual(before)
   })
 
   it('只能確認／標記到期月份的期數；已存在的期數（週期改過）仍可處理', async () => {

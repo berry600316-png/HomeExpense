@@ -144,26 +144,48 @@
   flex: 1;
 }
 
-.stepper {
+/* 信用卡「調整順序」模式（2026-10-23） */
+.list-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 var(--sp-2);
+}
+
+.reorder-btns {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.reorder-btn {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--c-line-strong);
+  justify-content: center;
+  gap: 3px;
+  min-width: 64px;
+  min-height: var(--tap);
+  padding: 0 10px;
   border-radius: 12px;
-  overflow: hidden;
-  background: var(--c-surface);
-}
-
-.stepper button {
-  width: 44px;
-  height: 40px;
-  font-size: 20px;
+  background: var(--c-accent-soft);
   color: var(--c-accent);
+  font-size: var(--fs-sm);
+  font-weight: 700;
 }
 
-.stepper span {
-  min-width: 44px;
-  text-align: center;
-  font-weight: 650;
+.reorder-btn:active {
+  opacity: 0.7;
+}
+
+.reorder-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* 窄螢幕：上移／下移改成上下疊，讓卡片名稱有足夠寬度 */
+@media (max-width: 360px) {
+  .reorder-btns {
+    flex-direction: column;
+  }
 }
 
 .about {

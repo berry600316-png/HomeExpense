@@ -30,9 +30,10 @@ const TODAY = '2026-10-21'
 
 /** 建立 16,700 案例＋保險、備註、卡費紀錄、設定等全部種類的資料。 */
 async function seed(x: HomeExpenseDB) {
-  const card = (name: string) => repo.createCard({ name, bank: '', tag: '', dueDay: 24, note: `${name}備註\n第二行`, startYm: '2026-01' }, TODAY, x)
-  const taishin = await card('台新信用卡')
-  const cathay = await card('國泰信用卡')
+  const card = (name: string, remindDays: number) =>
+    repo.createCard({ name, bank: '', tag: '', dueDay: 24, remindDays, note: `${name}備註\n第二行`, startYm: '2026-01' }, TODAY, x)
+  const taishin = await card('台新信用卡', 1)
+  const cathay = await card('國泰信用卡', 2)
   const src = async (id: string) => (await x.sources.where('cardId').equals(id).first())!.id
   const sT = await src(taishin.id)
   const sC = await src(cathay.id)
@@ -55,7 +56,7 @@ async function seed(x: HomeExpenseDB) {
   await repo.saveExtra({ name: '額外銀行轉帳購物', amount: 3000, date: '2026-10-21', sourceId: bank.id, note: '家電' }, null, x)
   await repo.saveMonthNote('2026-10', '十月整體備註', x)
   await repo.markBillPaid(taishin.id, '2026-10', '2026-10-20', x)
-  await repo.setSetting('reminderDaysBefore', 7, x)
+  await repo.setSetting('lastBackupAt', 1_790_000_000_000, x)
 }
 
 async function dump(x: HomeExpenseDB) {
@@ -136,6 +137,69 @@ describe('#19 還原失敗時既有資料不受損', () => {
     const spy = vi.spyOn(d.table('sources'), 'bulkAdd').mockRejectedValueOnce(new Error('模擬寫入失敗'))
     await expect(restoreAll(backup, d)).rejects.toThrow('模擬寫入失敗')
     spy.mockRestore()
+    expect(await dump(d)).toEqual(before)
+  })
+})
+
+describe('備份結構 v2：提前天數存在每張卡', () => {
+  /** 把目前的備份改造成舊版（v1）格式：卡片沒有 remindDays，天數在 settings。 */
+  async function v1Json(legacy: unknown) {
+    await seed(d)
+    const j = JSON.parse(JSON.stringify(await exportAll(d)))
+    j.schemaVersion = 1
+    for (const c of j.data.cards) delete c.remindDays
+    if (legacy !== undefined) j.data.settings.push({ key: 'reminderDaysBefore', value: legacy })
+    return JSON.stringify(j)
+  }
+
+  it('每張卡的天數經匯出 → 還原後保留（台新 1 天、國泰 2 天）', async () => {
+    await seed(d)
+    const v = validateBackup(JSON.stringify(await exportAll(d)))
+    if (!v.ok) throw new Error(v.errors.join('\n'))
+    const other = open(`t-backup-v2-${n}`)
+    await restoreAll(v.backup, other)
+    expect((await other.cards.orderBy('order').toArray()).map((c) => [c.name, c.remindDays])).toEqual([
+      ['台新信用卡', 1],
+      ['國泰信用卡', 2],
+    ])
+  })
+
+  it('舊版 v1 備份仍可還原：每張卡套用備份裡的全域天數，舊設定不寫回資料庫', async () => {
+    const v = validateBackup(await v1Json(9))
+    if (!v.ok) throw new Error(v.errors.join('\n'))
+    expect(v.backup.schemaVersion).toBe(BACKUP_SCHEMA_VERSION)
+    const other = open(`t-backup-v1-${n}`)
+    await restoreAll(v.backup, other)
+    expect((await other.cards.toArray()).map((c) => c.remindDays)).toEqual([9, 9])
+    expect(await other.settings.get('reminderDaysBefore')).toBeUndefined()
+    expect((await other.settings.get('lastBackupAt'))?.value).toBe(1_790_000_000_000)
+    const r = computeMonth('2026-10', await repo.loadAll(other), '2026-10')
+    expect(r.totals.total).toBe(16700)
+  })
+
+  it('舊版 v1 備份沒有天數設定（從沒改過）→ 用預設 5 天', async () => {
+    const v = validateBackup(await v1Json(undefined))
+    if (!v.ok) throw new Error(v.errors.join('\n'))
+    expect(v.backup.data.cards.map((c) => c.remindDays)).toEqual([5, 5])
+  })
+
+  it('舊版 v1 備份的天數設定格式錯誤 → 拒絕還原', async () => {
+    const v = validateBackup(await v1Json('abc'))
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.errors.join('\n')).toMatch(/提醒天數/)
+  })
+
+  it('v2 備份的卡片缺少天數或超出範圍 → 拒絕還原，原資料不變', async () => {
+    await seed(d)
+    const before = await dump(d)
+    const mutations = [(c: any) => delete c.remindDays, (c: any) => (c.remindDays = 32), (c: any) => (c.remindDays = 1.5)]
+    for (const mutate of mutations) {
+      const j = JSON.parse(JSON.stringify(await exportAll(d)))
+      mutate(j.data.cards[0])
+      const v = validateBackup(JSON.stringify(j))
+      expect(v.ok).toBe(false)
+      if (!v.ok) expect(v.errors.join('\n')).toMatch(/信用卡/)
+    }
     expect(await dump(d)).toEqual(before)
   })
 })
