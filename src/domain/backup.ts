@@ -5,10 +5,16 @@
  */
 import { z } from 'zod'
 import { MAX_AMOUNT } from './money'
+import { DEFAULT_REMINDER_DAYS, isValidRemindDays, LEGACY_REMINDER_DAYS_KEY, MAX_REMINDER_DAYS } from './types'
 import { isValidYm, isValidYmd } from './ym'
 
 export const BACKUP_APP_ID = 'homeexpense-tw'
-export const BACKUP_SCHEMA_VERSION = 1
+/**
+ * 結構版本。
+ * v1：提前天數是全域設定（settings 的 reminderDaysBefore）。
+ * v2（2026-10-23）：提前天數改存在每張卡的 remindDays。v1 備份仍可還原，見 upgradeV1。
+ */
+export const BACKUP_SCHEMA_VERSION = 2
 
 const id = z.string().min(1).max(100)
 const ym = z.string().refine(isValidYm, '年月格式錯誤')
@@ -19,11 +25,12 @@ const text = z.string().max(20000)
 const day = z.number().int().min(1).max(31)
 const ts = z.number().finite()
 const order = z.number().int()
+const remindDays = z.number().int().min(0).max(MAX_REMINDER_DAYS)
 
 const range = { startYm: ym, endYm: ym.nullable() }
 
 export const tableSchemas = {
-  cards: z.object({ id, name: text.min(1), bank: text, tag: text, order, dueDay: day.nullable(), dueFrom: ymd.nullable(), note: text, ...range, createdAt: ts, updatedAt: ts }),
+  cards: z.object({ id, name: text.min(1), bank: text, tag: text, order, dueDay: day.nullable(), dueFrom: ymd.nullable(), remindDays, note: text, ...range, createdAt: ts, updatedAt: ts }),
   cardMonths: z.object({ id, cardId: id, ym, amount: money.nullable(), note: text, updatedAt: ts }),
   sources: z.object({ id, kind: z.enum(['card', 'bank', 'cash', 'other']), cardId: id.nullable(), name: text, order, archived: z.boolean(), note: text }),
   templates: z.object({
@@ -62,7 +69,7 @@ export const tableSchemas = {
   extras: z.object({ id, name: text.min(1), amount: moneyPos, date: ymd, ym, sourceId: id.nullable(), note: text, createdAt: ts, updatedAt: ts }),
   monthNotes: z.object({ ym, note: text, updatedAt: ts }),
   cardBills: z.object({ id, cardId: id, dueYm: ym, dueDateOverride: ymd.nullable(), paidDate: ymd.nullable(), updatedAt: ts }),
-  settings: z.object({ key: z.enum(['reminderDaysBefore', 'lastBackupAt']), value: z.unknown() }),
+  settings: z.object({ key: z.enum(['lastBackupAt']), value: z.unknown() }),
 } as const
 
 export type BackupTables = { [K in keyof typeof tableSchemas]: z.infer<(typeof tableSchemas)[K]>[] }
@@ -117,7 +124,7 @@ export function validateBackup(raw: string): ValidationResult {
     return { ok: false, errors: [`備份檔版本（v${obj.schemaVersion}）比目前 App 新，請先更新 App`] }
   if (obj.schemaVersion < 1) return { ok: false, errors: ['不支援的備份版本'] }
   if (typeof obj.data !== 'object' || obj.data === null) return { ok: false, errors: ['備份檔沒有資料內容'] }
-  const dataIn = obj.data as Record<string, unknown>
+  const dataIn = obj.schemaVersion === 1 ? upgradeV1(obj.data as Record<string, unknown>, fail) : (obj.data as Record<string, unknown>)
 
   const data = {} as BackupTables
   for (const name of TABLE_NAMES) {
@@ -202,8 +209,6 @@ export function validateBackup(raw: string): ValidationResult {
     if (e.ym !== e.date.slice(0, 7)) fail(`額外消費「${e.name}」的月份與日期不一致`)
   }
   for (const s of data.settings) {
-    if (s.key === 'reminderDaysBefore' && !(typeof s.value === 'number' && Number.isInteger(s.value) && s.value >= 0 && s.value <= 31))
-      fail('設定「提醒天數」格式錯誤')
     if (s.key === 'lastBackupAt' && !(typeof s.value === 'number' && Number.isFinite(s.value))) fail('設定「上次備份時間」格式錯誤')
   }
 
@@ -211,7 +216,34 @@ export function validateBackup(raw: string): ValidationResult {
   const counts = Object.fromEntries(TABLE_NAMES.map((n) => [n, data[n].length])) as Record<keyof BackupTables, number>
   return {
     ok: true,
-    backup: { app: BACKUP_APP_ID, schemaVersion: obj.schemaVersion, exportedAt: String(obj.exportedAt ?? ''), data },
+    // v1 已在 upgradeV1 轉成 v2 的內容，所以一律以目前版本回傳
+    backup: { app: BACKUP_APP_ID, schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: String(obj.exportedAt ?? ''), data },
     counts,
   }
+}
+
+/**
+ * v1 → v2：把舊備份的全域提前天數寫進每張卡，並移除那筆舊設定。
+ * 舊設定不存在 → 用預設 5 天；存在但格式錯誤 → 回報錯誤（與 v1 時代的驗證一致）。
+ * 不修改傳入的物件。
+ */
+function upgradeV1(dataIn: Record<string, unknown>, fail: (m: string) => void): Record<string, unknown> {
+  const settings = Array.isArray(dataIn.settings) ? dataIn.settings : null
+  let days = DEFAULT_REMINDER_DAYS
+  const legacy = settings?.find((s) => typeof s === 'object' && s !== null && (s as { key?: unknown }).key === LEGACY_REMINDER_DAYS_KEY) as
+    | { value?: unknown }
+    | undefined
+  if (legacy) {
+    if (isValidRemindDays(legacy.value)) days = legacy.value
+    else fail('設定「提醒天數」格式錯誤')
+  }
+  const cards = Array.isArray(dataIn.cards)
+    ? dataIn.cards.map((c) =>
+        typeof c === 'object' && c !== null && (c as { remindDays?: unknown }).remindDays === undefined ? { ...c, remindDays: days } : c,
+      )
+    : dataIn.cards
+  const nextSettings = settings
+    ? settings.filter((s) => !(typeof s === 'object' && s !== null && (s as { key?: unknown }).key === LEGACY_REMINDER_DAYS_KEY))
+    : dataIn.settings
+  return { ...dataIn, cards, settings: nextSettings }
 }

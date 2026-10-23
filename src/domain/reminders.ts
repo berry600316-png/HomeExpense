@@ -26,17 +26,13 @@ export const MAX_LOOKBACK_MONTHS = 24
 
 /**
  * 今天需要提醒的卡費。
- * 檢查範圍：從提醒起算月份（最多回溯 24 個月）～ 下個月的截止日
- * （下個月：例如 10/29 時，11/2 截止已在 5 天內）。逾期未繳會一直提醒，直到按已繳。
- * 條件：未繳、截止日 >= 提醒起算日 dueFrom、今天 >= 截止日 − daysBefore。
+ * 檢查範圍：從提醒起算月份（最多回溯 24 個月）～ 兩個月後的截止日
+ * （例如 10/29 時，11/2 截止已在 5 天內；提前天數最多 31 天，所以看到兩個月後）。
+ * 逾期未繳會一直提醒，直到按已繳。
+ * 條件：未繳、截止日 >= 提醒起算日 dueFrom、今天 >= 截止日 − 該卡的 remindDays。
  * 卡片停用（endYm）之後的截止日不提醒。
  */
-export function computeReminders(
-  today: YMD,
-  cards: CreditCard[],
-  bills: CardBill[],
-  daysBefore: number,
-): BillReminder[] {
+export function computeReminders(today: YMD, cards: CreditCard[], bills: CardBill[]): BillReminder[] {
   const billMap = new Map(bills.map((b) => [`${b.cardId}|${b.dueYm}`, b]))
   const thisYm = ymOf(today)
   const out: BillReminder[] = []
@@ -45,7 +41,7 @@ export function computeReminders(
     if (card.dueDay === null && !bills.some((b) => b.cardId === card.id && b.dueDateOverride)) continue
     const fromYm = card.dueFrom !== null ? ymOf(card.dueFrom) : card.startYm
     const back = Math.min(MAX_LOOKBACK_MONTHS, Math.max(0, monthsBetween(fromYm, thisYm)))
-    for (let i = -back; i <= 1; i++) {
+    for (let i = -back; i <= 2; i++) {
       const dueYm = addMonths(thisYm, i)
       if (card.endYm !== null && dueYm >= card.endYm) continue
       const bill = billMap.get(`${card.id}|${dueYm}`)
@@ -53,7 +49,7 @@ export function computeReminders(
       const dueDate = billDueDate(card, dueYm, bill)
       if (dueDate === null) continue
       if (card.dueFrom !== null && dueDate < card.dueFrom) continue
-      if (today < addDays(dueDate, -daysBefore)) continue
+      if (today < addDays(dueDate, -card.remindDays)) continue
       const daysLeft = diffDays(today, dueDate)
       out.push({ cardId: card.id, cardName: card.name, dueYm, dueDate, daysLeft, overdue: daysLeft < 0 })
     }

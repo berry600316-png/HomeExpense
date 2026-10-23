@@ -10,6 +10,8 @@ import { isValidAmount } from '../domain/money'
 import { isDueMonth } from '../domain/schedule'
 import {
   DEFAULT_REMINDER_DAYS,
+  isValidRemindDays,
+  MAX_REMINDER_DAYS,
   SETTING_KEYS,
   type Beneficiary,
   type CardBill,
@@ -94,17 +96,10 @@ export async function getSetting<T>(key: string, fallback: T, d: HomeExpenseDB =
 }
 
 export async function setSetting(key: string, value: unknown, d: HomeExpenseDB = defaultDb) {
-  if (key === SETTING_KEYS.reminderDaysBefore)
-    must(typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 31, '提醒天數需為 0–31')
-  else if (key === SETTING_KEYS.lastBackupAt)
+  if (key === SETTING_KEYS.lastBackupAt)
     must(typeof value === 'number' && Number.isFinite(value) && value > 0, '備份時間格式錯誤')
   else must(false, `未知的設定項目：${key}`)
   await d.settings.put({ key, value })
-}
-
-export async function getReminderDays(d: HomeExpenseDB = defaultDb): Promise<number> {
-  const v = await getSetting<number>(SETTING_KEYS.reminderDaysBefore, DEFAULT_REMINDER_DAYS, d)
-  return Number.isInteger(v) && v >= 0 && v <= 31 ? v : DEFAULT_REMINDER_DAYS
 }
 
 // ───────────────────────── 信用卡 ─────────────────────────
@@ -114,14 +109,21 @@ export interface CardInput {
   bank: string
   tag: string
   dueDay: number | null
+  /** 截止前幾天開始提醒；新增時省略 = 預設 5 天。 */
+  remindDays?: number
   note: string
   startYm: YM
+}
+
+function checkRemindDays(n: number | undefined) {
+  must(n === undefined || isValidRemindDays(n), `提前提醒天數需為 0–${MAX_REMINDER_DAYS} 的整數`)
 }
 
 /** 新增信用卡，同時建立一對一的付款來源。 */
 export async function createCard(input: CardInput, today: YMD, d: HomeExpenseDB = defaultDb): Promise<CreditCard> {
   const name = cleanName(input.name, '卡片名稱')
   checkDay(input.dueDay, '繳款截止日')
+  checkRemindDays(input.remindDays)
   checkRange(input.startYm, null)
   checkToday(today)
   const now = Date.now()
@@ -134,6 +136,7 @@ export async function createCard(input: CardInput, today: YMD, d: HomeExpenseDB 
       order: await nextOrder(d.cards),
       dueDay: input.dueDay,
       dueFrom: input.dueDay === null ? null : today,
+      remindDays: input.remindDays ?? DEFAULT_REMINDER_DAYS,
       note: cleanText(input.note),
       startYm: input.startYm,
       endYm: null,
@@ -162,6 +165,7 @@ export async function updateCard(
 ): Promise<void> {
   checkToday(today)
   checkOrder(patch.order)
+  checkRemindDays(patch.remindDays)
   await d.transaction('rw', d.cards, d.sources, async () => {
     const card = await d.cards.get(id)
     must(card, '找不到這張卡')
@@ -171,6 +175,7 @@ export async function updateCard(
     if (patch.tag !== undefined) next.tag = patch.tag.trim()
     if (patch.note !== undefined) next.note = cleanText(patch.note)
     if (patch.order !== undefined) next.order = patch.order
+    if (patch.remindDays !== undefined) next.remindDays = patch.remindDays
     if (patch.startYm !== undefined) next.startYm = patch.startYm
     if (patch.endYm !== undefined) next.endYm = patch.endYm
     if (patch.dueDay !== undefined && patch.dueDay !== card.dueDay) {
@@ -183,6 +188,22 @@ export async function updateCard(
     await d.cards.put(next)
     const src = await d.sources.where('cardId').equals(id).first()
     if (src) await d.sources.update(src.id, { name: next.name, archived: next.endYm !== null })
+  })
+}
+
+/**
+ * 對調兩張卡的顯示順序（首頁、分享圖片、提醒列表都依此排序）。
+ * 單一交易：任何一步失敗，兩張卡都維持原本的順序，不會留下兩張同順位的卡。
+ */
+export async function swapCardOrder(aId: ID, bId: ID, d: HomeExpenseDB = defaultDb): Promise<void> {
+  must(aId !== bId, '不能和自己對調')
+  await d.transaction('rw', d.cards, async () => {
+    const a = await d.cards.get(aId)
+    const b = await d.cards.get(bId)
+    must(a && b, '找不到這張卡')
+    const now = Date.now()
+    await d.cards.update(a.id, { order: b.order, updatedAt: now })
+    await d.cards.update(b.id, { order: a.order, updatedAt: now })
   })
 }
 

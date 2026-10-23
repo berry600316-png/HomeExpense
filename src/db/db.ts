@@ -12,9 +12,24 @@ import type {
   PaymentSource,
   SettingRow,
 } from '../domain/types'
+import { DEFAULT_REMINDER_DAYS, isValidRemindDays, LEGACY_REMINDER_DAYS_KEY } from '../domain/types'
 
 /** 專屬資料庫名稱，避免與同網域其他網站／專案共用。 */
 export const DB_NAME = 'homeexpense-tw-v1'
+
+const STORES = {
+  cards: 'id, order',
+  cardMonths: 'id, &[cardId+ym], cardId, ym',
+  sources: 'id, kind, cardId, order',
+  templates: 'id, kind, order',
+  insurance: 'templateId, beneficiaryId',
+  beneficiaries: 'id, order',
+  occurrences: 'id, &[templateId+periodKey], templateId, periodYm, actualYm, status',
+  extras: 'id, ym, date',
+  monthNotes: 'ym',
+  cardBills: 'id, &[cardId+dueYm], cardId, dueYm',
+  settings: 'key',
+}
 
 export class HomeExpenseDB extends Dexie {
   cards!: EntityTable<CreditCard, 'id'>
@@ -31,19 +46,22 @@ export class HomeExpenseDB extends Dexie {
 
   constructor(name: string = DB_NAME) {
     super(name)
-    this.version(1).stores({
-      cards: 'id, order',
-      cardMonths: 'id, &[cardId+ym], cardId, ym',
-      sources: 'id, kind, cardId, order',
-      templates: 'id, kind, order',
-      insurance: 'templateId, beneficiaryId',
-      beneficiaries: 'id, order',
-      occurrences: 'id, &[templateId+periodKey], templateId, periodYm, actualYm, status',
-      extras: 'id, ym, date',
-      monthNotes: 'ym',
-      cardBills: 'id, &[cardId+dueYm], cardId, dueYm',
-      settings: 'key',
-    })
+    this.version(1).stores(STORES)
+    // v2（2026-10-23）：提前天數從全域設定改為每張卡的 remindDays。
+    // 舊卡沿用升級前的全域值（沒設定過就是 5 天），然後刪掉那筆舊設定。索引不變。
+    this.version(2)
+      .stores(STORES)
+      .upgrade(async (tx) => {
+        const row = (await tx.table('settings').get(LEGACY_REMINDER_DAYS_KEY)) as SettingRow | undefined
+        const days = isValidRemindDays(row?.value) ? row.value : DEFAULT_REMINDER_DAYS
+        await tx
+          .table('cards')
+          .toCollection()
+          .modify((c: CreditCard) => {
+            if (!isValidRemindDays(c.remindDays)) c.remindDays = days
+          })
+        await tx.table('settings').delete(LEGACY_REMINDER_DAYS_KEY)
+      })
   }
 }
 
