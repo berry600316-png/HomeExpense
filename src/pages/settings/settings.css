@@ -92,6 +92,19 @@
   opacity: 0.25;
 }
 
+/* 扣款來源列：左側整塊可點開，右側是排序箭頭 */
+.row-open {
+  display: block;
+  min-width: 0;
+  text-align: left;
+}
+
+.row-icon {
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--c-accent-2);
+}
+
 .filter-row {
   display: flex;
   gap: 6px;
@@ -144,53 +157,14 @@
   flex: 1;
 }
 
-/* 信用卡「調整順序」模式（2026-10-23） */
-.list-tools {
-  display: flex;
-  justify-content: flex-end;
-  margin: 0 0 var(--sp-2);
-}
-
-.reorder-btns {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
-
-.reorder-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-width: 64px;
-  min-height: var(--tap);
-  padding: 0 10px;
-  border-radius: 12px;
-  background: var(--c-accent-soft);
-  color: var(--c-accent);
-  font-size: var(--fs-sm);
-  font-weight: 700;
-}
-
-.reorder-btn:active {
-  opacity: 0.7;
-}
-
-.reorder-btn:disabled {
-  opacity: 0.3;
-  pointer-events: none;
-}
-
-/* 窄螢幕：上移／下移改成上下疊，讓卡片名稱有足夠寬度 */
-@media (max-width: 360px) {
-  .reorder-btns {
-    flex-direction: column;
-  }
-}
-
 .about {
   font-size: var(--fs-xs);
   color: var(--c-text-3);
   line-height: 1.6;
   margin: var(--sp-6) var(--sp-2) 0;
+}
+
+.about-version {
+  margin-top: var(--sp-2);
+  text-align: center;
 }

@@ -3,7 +3,7 @@ import { ChevronRight, CreditCard, HardDriveDownload, Landmark, ShieldCheck, Use
 import { Link } from 'react-router-dom'
 import { db } from '../../db/db'
 import { SETTING_KEYS } from '../../domain/types'
-import { APP_NAME } from '../../appInfo'
+import { APP_NAME, APP_VERSION } from '../../appInfo'
 import { PageHeader } from './common'
 
 function Row({ to, icon, title, sub }: { to: string; icon: React.ReactNode; title: string; sub?: string }) {
@@ -66,6 +66,7 @@ export function SettingsPage() {
       <p className="about">
         {APP_NAME} · 所有資料只存在這台裝置的瀏覽器中，不會上傳到任何伺服器。清除 Safari 網站資料、刪除主畫面 App 或換手機都會讓資料消失，請定期到「備份與還原」匯出備份檔。
       </p>
+      <p className="about about-version">版本 {APP_VERSION}</p>
     </main>
   )
 }

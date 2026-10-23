@@ -90,7 +90,10 @@ export function SourceSelect({
   emptyLabel?: string
 }) {
   const visible = data.sources.filter((s) => !s.archived || s.id === value).sort((a, b) => a.order - b.order)
-  const cards = visible.filter((s) => s.kind === 'card')
+  // 信用卡依卡片本身的順序排列（與首頁一致，在扣款來源頁調整）；其他來源依來源自己的順序
+  const cardOrder = new Map(data.cards.map((c) => [c.id, c.order]))
+  const orderOfCard = (s: PaymentSource) => (s.cardId !== null ? (cardOrder.get(s.cardId) ?? s.order) : s.order)
+  const cards = visible.filter((s) => s.kind === 'card').sort((a, b) => orderOfCard(a) - orderOfCard(b))
   const others = visible.filter((s) => s.kind !== 'card')
   const missing = value !== null && !data.sources.some((s) => s.id === value)
   return (

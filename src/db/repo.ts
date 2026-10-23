@@ -192,7 +192,7 @@ export async function updateCard(
 }
 
 /**
- * 對調兩張卡的顯示順序（首頁、分享圖片、提醒列表都依此排序）。
+ * 對調兩張卡的顯示順序（首頁、分享圖片、信用卡管理、扣款下拉選單依此排序；卡費提醒依截止日排序，不受影響）。
  * 單一交易：任何一步失敗，兩張卡都維持原本的順序，不會留下兩張同順位的卡。
  */
 export async function swapCardOrder(aId: ID, bId: ID, d: HomeExpenseDB = defaultDb): Promise<void> {
@@ -204,6 +204,23 @@ export async function swapCardOrder(aId: ID, bId: ID, d: HomeExpenseDB = default
     const now = Date.now()
     await d.cards.update(a.id, { order: b.order, updatedAt: now })
     await d.cards.update(b.id, { order: a.order, updatedAt: now })
+  })
+}
+
+/**
+ * 對調兩個「銀行／現金／其他」扣款來源的順序（扣款下拉選單依此排列）。
+ * 信用卡來源不在這裡調：信用卡的順序一律以卡片本身的 order 為準，用 swapCardOrder。
+ * 單一交易：任何一步失敗，兩筆都維持原本的順序。
+ */
+export async function swapSourceOrder(aId: ID, bId: ID, d: HomeExpenseDB = defaultDb): Promise<void> {
+  must(aId !== bId, '不能和自己對調')
+  await d.transaction('rw', d.sources, async () => {
+    const a = await d.sources.get(aId)
+    const b = await d.sources.get(bId)
+    must(a && b, '找不到這個扣款來源')
+    must(a.kind !== 'card' && b.kind !== 'card', '信用卡的順序請用卡片順序調整')
+    await d.sources.update(a.id, { order: b.order })
+    await d.sources.update(b.id, { order: a.order })
   })
 }
 

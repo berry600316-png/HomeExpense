@@ -292,6 +292,34 @@ describe('驗收回報：寫入驗證缺口', () => {
     expect((await d.cards.orderBy('order').toArray()).map((c) => c.name)).toEqual(['B', 'A'])
   })
 
+  it('對調扣款來源順序（銀行／現金／其他）：互換 order，信用卡來源不接受', async () => {
+    const a = await repo.createSource('bank', '郵局', '', d)
+    const b = await repo.createSource('cash', '現金', '', d)
+    await repo.swapSourceOrder(a.id, b.id, d)
+    const others = (await d.sources.orderBy('order').toArray()).filter((s) => s.kind !== 'card')
+    expect(others.map((s) => s.name)).toEqual(['現金', '郵局'])
+    const card = await repo.createCard(cardInput('台新'), TODAY, d)
+    const cardSrc = await cardSourceId(card.id)
+    await expect(repo.swapSourceOrder(a.id, cardSrc, d)).rejects.toThrow('信用卡')
+    await expect(repo.swapSourceOrder(a.id, a.id, d)).rejects.toThrow()
+    await expect(repo.swapSourceOrder(a.id, 'ghost', d)).rejects.toThrow('找不到')
+    const after = (await d.sources.orderBy('order').toArray()).filter((s) => s.kind !== 'card')
+    expect(after.map((s) => s.name)).toEqual(['現金', '郵局'])
+  })
+
+  it('對調扣款來源順序是單一交易：第二筆寫入失敗時，第一筆也回滾', async () => {
+    const a = await repo.createSource('bank', '郵局', '', d)
+    const b = await repo.createSource('cash', '現金', '', d)
+    const before = (await d.sources.toArray()).map((s) => [s.name, s.order])
+    const fail = function (_mods: object, key: unknown) {
+      if (key === b.id) throw new Error('模擬寫入失敗')
+    }
+    d.sources.hook('updating', fail)
+    await expect(repo.swapSourceOrder(a.id, b.id, d)).rejects.toThrow('模擬寫入失敗')
+    d.sources.hook('updating').unsubscribe(fail)
+    expect((await d.sources.toArray()).map((s) => [s.name, s.order])).toEqual(before)
+  })
+
   it('對調卡片順序是單一交易：第二筆寫入失敗時，第一筆也回滾（不會出現兩張同順位）', async () => {
     const a = await repo.createCard(cardInput('A'), TODAY, d)
     const b = await repo.createCard(cardInput('B'), TODAY, d)

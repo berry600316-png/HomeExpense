@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ChevronRight, CreditCard, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, CreditCard, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../../db/db'
-import { createSource, deleteSource, isSourceUsed, updateSource } from '../../db/repo'
+import { createSource, deleteSource, isSourceUsed, swapCardOrder, swapSourceOrder, updateSource } from '../../db/repo'
 import type { PaymentSource, SourceKind } from '../../domain/types'
 import { Field, Segmented, TextArea, useFieldId } from '../../ui/fields'
 import { Sheet } from '../../ui/Sheet'
@@ -13,14 +13,80 @@ import { Loading, PageHeader } from './common'
 type OtherKind = Exclude<SourceKind, 'card'>
 const KIND_LABEL: Record<SourceKind, string> = { card: '信用卡', bank: '銀行帳戶', cash: '現金', other: '其他' }
 
+/**
+ * 扣款來源。兩組各自可用 ︿﹀ 調整順序（樣式同固定支出頁，使用者 2026-10-23）：
+ * - 銀行／現金／其他：調整來源自己的順序（扣款下拉選單依此排列）。
+ * - 信用卡：調整的是卡片本身的順序，首頁、分享圖片、信用卡管理、下拉選單都跟著變（卡費提醒依截止日排序，不受影響）。
+ * 停用的項目不參加排序。
+ */
 export function SourcesPage() {
+  const toast = useToast()
   const sources = useLiveQuery(() => db.sources.orderBy('order').toArray())
   const cards = useLiveQuery(() => db.cards.toArray())
   const [editing, setEditing] = useState<PaymentSource | 'new' | null>(null)
+  const [busy, setBusy] = useState(false)
   if (!sources || !cards) return <Loading />
-  const cardName = (s: PaymentSource) => cards.find((c) => c.id === s.cardId)?.name ?? s.name
-  const cardSrc = sources.filter((s) => s.kind === 'card')
+  const cardById = new Map(cards.map((c) => [c.id, c]))
+  const cardName = (s: PaymentSource) => (s.cardId ? cardById.get(s.cardId)?.name : undefined) ?? s.name
+  const cardOrder = (s: PaymentSource) => (s.cardId ? (cardById.get(s.cardId)?.order ?? s.order) : s.order)
+  const cardSrc = sources.filter((s) => s.kind === 'card').sort((a, b) => cardOrder(a) - cardOrder(b))
+  const activeCardSrc = cardSrc.filter((s) => !s.archived)
+  const archivedCardSrc = cardSrc.filter((s) => s.archived)
   const others = sources.filter((s) => s.kind !== 'card')
+  const activeOthers = others.filter((s) => !s.archived)
+  const archivedOthers = others.filter((s) => s.archived)
+
+  const move = async (list: PaymentSource[], i: number, dir: -1 | 1) => {
+    const a = list[i]
+    const b = list[i + dir]
+    if (!a || !b || busy) return
+    setBusy(true)
+    try {
+      if (a.kind === 'card') await swapCardOrder(a.cardId!, b.cardId!)
+      else await swapSourceOrder(a.id, b.id)
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const orderBtns = (list: PaymentSource[], i: number) => (
+    <span className="order-btns">
+      <button type="button" aria-label="往上移" disabled={i === 0 || busy} onClick={() => void move(list, i, -1)}>
+        <ChevronUp size={18} />
+      </button>
+      <button type="button" aria-label="往下移" disabled={i === list.length - 1 || busy} onClick={() => void move(list, i, 1)}>
+        <ChevronDown size={18} />
+      </button>
+    </span>
+  )
+
+  const otherRow = (s: PaymentSource, i: number, list: PaymentSource[] | null) => (
+    <div key={s.id} className={`list-row${s.archived ? ' is-archived' : ''}`}>
+      <button type="button" className="grow row-open" onClick={() => setEditing(s)}>
+        <div className="title">{s.name}</div>
+        <div className="sub">
+          {KIND_LABEL[s.kind]}
+          {s.archived ? ' · 已停用' : ''}
+        </div>
+      </button>
+      {list ? orderBtns(list, i) : <ChevronRight size={18} className="trail" />}
+    </div>
+  )
+
+  const cardRow = (s: PaymentSource, i: number, list: PaymentSource[] | null) => (
+    <div key={s.id} className={`list-row${s.archived ? ' is-archived' : ''}`}>
+      <Link to={`/settings/cards/${s.cardId}`} className="grow row-open">
+        <div className="title">
+          <CreditCard size={15} className="row-icon" />
+          {cardName(s)}
+        </div>
+        <div className="sub">{s.archived ? '已停用' : '在信用卡管理修改'}</div>
+      </Link>
+      {list ? orderBtns(list, i) : <ChevronRight size={18} className="trail" />}
+    </div>
+  )
 
   return (
     <main>
@@ -46,35 +112,15 @@ export function SourcesPage() {
             </button>
           </div>
         )}
-        {others.map((s) => (
-          <button key={s.id} type="button" className={`list-row${s.archived ? ' is-archived' : ''}`} onClick={() => setEditing(s)}>
-            <span className="grow">
-              <div className="title">{s.name}</div>
-              <div className="sub">
-                {KIND_LABEL[s.kind]}
-                {s.archived ? ' · 已停用' : ''}
-              </div>
-            </span>
-            <ChevronRight size={18} className="trail" />
-          </button>
-        ))}
+        {activeOthers.map((s, i) => otherRow(s, i, activeOthers))}
+        {archivedOthers.map((s, i) => otherRow(s, i, null))}
       </div>
 
-      <h2 className="group-title">信用卡（新增卡片時自動建立）</h2>
+      <h2 className="group-title">信用卡（新增卡片時自動建立；這裡的順序也是首頁的卡片順序）</h2>
       <div className="group">
         {cardSrc.length === 0 && <div className="empty"><p>沒有信用卡</p></div>}
-        {cardSrc.map((s) => (
-          <Link key={s.id} to={`/settings/cards/${s.cardId}`} className={`list-row${s.archived ? ' is-archived' : ''}`}>
-            <span className="icon">
-              <CreditCard size={16} />
-            </span>
-            <span className="grow">
-              <div className="title">{cardName(s)}</div>
-              <div className="sub">{s.archived ? '已停用' : '在信用卡管理修改'}</div>
-            </span>
-            <ChevronRight size={18} className="trail" />
-          </Link>
-        ))}
+        {activeCardSrc.map((s, i) => cardRow(s, i, activeCardSrc))}
+        {archivedCardSrc.map((s, i) => cardRow(s, i, null))}
       </div>
 
       <SourceSheet editing={editing} onClose={() => setEditing(null)} />
