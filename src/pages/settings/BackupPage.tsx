@@ -7,7 +7,6 @@ import { setSetting } from '../../db/repo'
 import { validateBackup, type BackupFile } from '../../domain/backup'
 import { SETTING_KEYS } from '../../domain/types'
 import { errorMessage, useToast } from '../../ui/Toast'
-import { APP_NAME } from '../../appInfo'
 import { PageHeader } from './common'
 
 function stamp(d: Date) {
@@ -16,11 +15,11 @@ function stamp(d: Date) {
 }
 
 /** 優先用 iOS 分享面板（可存到「檔案」或 iCloud Drive），不支援時改為下載。回傳是否真的完成。 */
-async function deliverFile(file: File): Promise<boolean> {
+export async function deliverFile(file: File): Promise<boolean> {
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
   if (nav.share && nav.canShare?.({ files: [file] })) {
     try {
-      await nav.share({ files: [file], title: `${APP_NAME} 備份` })
+      await nav.share({ files: [file] })
       return true
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return false

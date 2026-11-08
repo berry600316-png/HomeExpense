@@ -6,4 +6,4 @@ export const APP_NAME = '周家計帳簿'
  * 1.0.0 第一版｜1.1.0 首頁改版＋分享給家人｜1.2.0 每張卡各自的提醒天數｜1.3.0 扣款來源排序
  * 加功能升中間的數字，只修問題升最後一個數字。
  */
-export const APP_VERSION = '1.3.0'
+export const APP_VERSION = '1.3.1'
