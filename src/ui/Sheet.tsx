@@ -12,6 +12,8 @@ interface SheetProps {
   children: ReactNode
   /** 固定在底部的操作列（儲存按鈕等），不隨內容捲動。 */
   footer?: ReactNode
+  /** Switch between two sheets without leaving the old one over the new content. */
+  immediateClose?: boolean
 }
 
 const EXIT_MS = 240
@@ -22,7 +24,7 @@ const EXIT_MS = 240
  * - 鍵盤開啟時，底部位移由 --kb（visualViewport 推算，見 useKeyboardInset）抬高，輸入框不被遮住。
  * - 內容區獨立捲動；底部保留 iPhone Safe Area。
  */
-export function Sheet({ open, onClose, title, subtitle, children, footer }: SheetProps) {
+export function Sheet({ open, onClose, title, subtitle, children, footer, immediateClose = false }: SheetProps) {
   const [mounted, setMounted] = useState(open)
   const [closing, setClosing] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -34,13 +36,18 @@ export function Sheet({ open, onClose, title, subtitle, children, footer }: Shee
       return
     }
     if (!mounted) return
+    if (immediateClose) {
+      setMounted(false)
+      setClosing(false)
+      return
+    }
     setClosing(true)
     const t = window.setTimeout(() => {
       setMounted(false)
       setClosing(false)
     }, EXIT_MS)
     return () => window.clearTimeout(t)
-  }, [open, mounted])
+  }, [open, mounted, immediateClose])
 
   // 鎖定背景捲動
   useEffect(() => {

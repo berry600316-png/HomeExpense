@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, CreditCard, NotebookPen, Plus, Settings, Share } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import type { FixedLine } from '../../domain/compute'
 import { formatMoney } from '../../domain/money'
@@ -10,12 +10,14 @@ import { BackupHint } from './BackupHint'
 import { CardMonthSheet } from '../sheets/CardMonthSheet'
 import { ExtraSheet } from '../sheets/ExtraSheet'
 import { FixedLineSheet } from '../sheets/FixedLineSheet'
+import { PendingFixedSheet } from '../sheets/PendingFixedSheet'
 import { MonthNoteSheet } from '../sheets/MonthNoteSheet'
 import { MonthPickerSheet } from '../sheets/MonthPickerSheet'
 import { ShareSheet } from '../sheets/ShareSheet'
 import { ReminderBanner } from './ReminderBanner'
 import { cardSub, extraCaption, fixedCaption, fixedMeta, fixedSlot, isQuietLine, makeLabels, monthStatus } from './homeText'
 import { buildShareSummary } from './shareSummary'
+import { homeFixedLines, nextPendingLine, pendingFixedLines } from './fixedQueue'
 import './home.css'
 
 import { APP_NAME } from '../../appInfo'
@@ -31,9 +33,18 @@ type SheetState =
   | { kind: 'month' }
   | { kind: 'note' }
   | { kind: 'share' }
+  | { kind: 'pending' }
   | { kind: 'card'; cardId: string }
-  | { kind: 'fixed'; line: FixedLine }
+  | { kind: 'fixed'; line: FixedLine; fromPending?: boolean }
   | { kind: 'extra'; id: string | null }
+
+type PendingFlow = {
+  orderKeys: string[]
+  handledKeys: string[]
+  lastKey: string | null
+  notice: string | null
+  noticeAt: number
+}
 
 export function HomePage() {
   const today = useToday()
@@ -51,8 +62,48 @@ export function HomePage() {
   const labels = useMemo(() => (data && lk ? makeLabels(data, lk) : null), [data, lk])
   const r = useMonthResult(data, ym, currentYm)
   const [sheet, setSheet] = useState<SheetState>({ kind: 'none' })
+  const [pendingFlow, setPendingFlow] = useState<PendingFlow | null>(null)
   const close = useCallback(() => setSheet({ kind: 'none' }), [])
+  const orderedFixed = useMemo(() => homeFixedLines(r?.fixed ?? []), [r])
+  const pending = useMemo(() => pendingFixedLines(r?.fixed ?? []), [r])
+  const remainingPending = pending.filter((line) => !pendingFlow?.handledKeys.includes(line.key))
   const summary = useMemo(() => (r && labels ? buildShareSummary(r, labels, today) : null), [r, labels, today])
+
+  useEffect(() => {
+    if (!pendingFlow?.notice) return
+    const timer = window.setTimeout(() => setPendingFlow((flow) => flow ? { ...flow, notice: null } : null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [pendingFlow?.noticeAt])
+
+  const openPending = () => {
+    setPendingFlow({ orderKeys: pending.map((line) => line.key), handledKeys: [], lastKey: null, notice: null, noticeAt: 0 })
+    setSheet({ kind: 'pending' })
+  }
+
+  const closePending = () => {
+    setPendingFlow(null)
+    close()
+  }
+
+  const handlePending = (line: FixedLine, action: 'confirmed' | 'deferred' | 'skipped') => {
+    if (!pendingFlow) return close()
+    const handledKeys = [...pendingFlow.handledKeys, line.key]
+    const remaining = pending.filter((item) => !handledKeys.includes(item.key))
+    const next = nextPendingLine(remaining, pendingFlow.orderKeys, line.key)
+    setPendingFlow({
+      ...pendingFlow, handledKeys, lastKey: line.key,
+      notice: action === 'confirmed' ? `已記錄${line.template.name}` : null,
+      noticeAt: Date.now(),
+    })
+    if (action === 'confirmed' || !next) setSheet({ kind: 'pending' })
+    else setSheet({ kind: 'fixed', line: next, fromPending: true })
+  }
+
+  const openNextPending = () => {
+    if (!pendingFlow) return
+    const next = nextPendingLine(remainingPending, pendingFlow.orderKeys, pendingFlow.lastKey ?? '')
+    if (next) setSheet({ kind: 'fixed', line: next, fromPending: true })
+  }
 
   const { y, m } = parseYm(ym)
   const status = r ? monthStatus(r) : null
@@ -152,7 +203,7 @@ export function HomePage() {
                   {fixedCaption(r).map((p, i) => (
                     <span key={i} className={`tone-${p.tone}`}>
                       {i > 0 && ' · '}
-                      {p.text}
+                      {p.tone === 'warn' ? <button type="button" className="half-cap-action" onClick={openPending}>{p.text}</button> : p.text}
                     </span>
                   ))}
                 </div>
@@ -165,7 +216,7 @@ export function HomePage() {
                   </Link>
                 </div>
               ) : (
-                r.fixed.map((line) => {
+                orderedFixed.map((line) => {
                   const meta = fixedMeta(line, ym, labels)
                   const slot = fixedSlot(line)
                   return (
@@ -230,9 +281,20 @@ export function HomePage() {
             data={data}
             lk={lk}
           />
+          <PendingFixedSheet
+            open={sheet.kind === 'pending'}
+            onClose={closePending}
+            lines={remainingPending}
+            notice={pendingFlow?.notice ?? null}
+            canContinue={!!pendingFlow?.lastKey && remainingPending.length > 0}
+            onSelect={(line) => setSheet({ kind: 'fixed', line, fromPending: true })}
+            onNext={openNextPending}
+          />
           <FixedLineSheet
             open={sheet.kind === 'fixed'}
-            onClose={close}
+            onClose={sheet.kind === 'fixed' && sheet.fromPending ? () => setSheet({ kind: 'pending' }) : close}
+            onHandled={sheet.kind === 'fixed' && sheet.fromPending ? handlePending : undefined}
+            immediateClose={pendingFlow !== null}
             ym={ym}
             today={today}
             line={sheet.kind === 'fixed' ? sheet.line : null}

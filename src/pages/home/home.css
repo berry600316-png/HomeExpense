@@ -316,6 +316,21 @@
 .half-cap .tone-warn {
   font-weight: 700;
 }
+.half-cap-action {
+  position: relative;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.half-cap-action::before {
+  content: '';
+  position: absolute;
+  inset: -14px -8px;
+}
+
 
 .mini-row {
   display: flex;

@@ -31,6 +31,8 @@ function m(ym: string) {
 export function FixedLineSheet({
   open,
   onClose,
+  onHandled,
+  immediateClose = false,
   ym,
   today,
   line,
@@ -39,6 +41,8 @@ export function FixedLineSheet({
 }: {
   open: boolean
   onClose: () => void
+  onHandled?: (line: FixedLine, action: 'confirmed' | 'deferred' | 'skipped') => void
+  immediateClose?: boolean
   ym: string
   today: string
   line: FixedLine | null
@@ -98,12 +102,13 @@ export function FixedLineSheet({
   const actualYm = isValidYmd(date) ? ymOf(date) : null
   const badge = STATE_BADGE[line.state]
 
-  const run = async (fn: () => Promise<unknown>, msg: string) => {
+  const run = async (fn: () => Promise<unknown>, msg: string, action?: 'confirmed' | 'deferred' | 'skipped') => {
     setBusy(true)
     try {
       await fn()
       toast(msg)
-      onClose()
+      if (action && onHandled) onHandled(line, action)
+      else onClose()
     } catch (e) {
       toast(errorMessage(e), 'error')
     } finally {
@@ -134,13 +139,14 @@ export function FixedLineSheet({
           note,
         }),
       `已確認 ${t.name} ${formatMoney(n)}`,
+      'confirmed',
     )
   }
 
   const onMark = (status: 'skipped' | 'deferred') => {
     if (!periodYm) return
     if (occ?.status === 'confirmed' && !window.confirm('這一期已確認扣款，改標記後已確認的金額會被移除。確定嗎？')) return
-    void run(() => markOccurrence(t.id, periodYm, status, note), status === 'skipped' ? '已標記本期未扣款' : '已標記延後，之後月份會持續提醒')
+    void run(() => markOccurrence(t.id, periodYm, status, note), status === 'skipped' ? '已標記本期未扣款' : '已標記延後，之後月份會持續提醒', status)
   }
 
   const onReset = () => {
@@ -158,6 +164,7 @@ export function FixedLineSheet({
     <Sheet
       open={open}
       onClose={onClose}
+      immediateClose={immediateClose}
       title={title}
       subtitle={subtitle}
       footer={
