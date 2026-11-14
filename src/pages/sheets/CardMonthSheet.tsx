@@ -1,7 +1,7 @@
 import { CircleAlert, Info } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { markBillPaid, saveCardMonth, setBillDueDate } from '../../db/repo'
+import { markBillNoPayment, markBillPaid, saveCardMonth, setBillDueDate } from '../../db/repo'
 import type { CardLine } from '../../domain/compute'
 import { formatMoney, parseAmount } from '../../domain/money'
 import { billDueDate } from '../../domain/reminders'
@@ -38,6 +38,7 @@ export function CardMonthSheet({
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [paymentDate, setPaymentDate] = useState(todayYmd())
 
   const cardId = line?.card.id
   useEffect(() => {
@@ -46,6 +47,7 @@ export function CardMonthSheet({
     setNegative(line.raw !== null && line.raw < 0)
     setNote(line.record?.note ?? '')
     setError(null)
+    setPaymentDate(todayYmd())
     // 只在打開或換卡／換月時載入
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cardId, ym])
@@ -55,7 +57,7 @@ export function CardMonthSheet({
   const parsed = parseAmount(amount)
   const preview = parsed === null || Number.isNaN(parsed) ? null : negative ? -parsed : parsed
   const variablePreview = preview === null ? null : preview - line.deductionTotal
-  const exceeds = preview !== null && line.deductionTotal > 0 && line.deductionTotal > preview
+  const exceeds = preview !== null && ((line.deductionTotal > 0 && line.deductionTotal > preview) || (preview === line.raw && line.exceedsTotal))
 
   const save = async (value: number | null) => {
     setBusy(true)
@@ -99,7 +101,7 @@ export function CardMonthSheet({
       }
     >
       <div className="form">
-        <Field label="銀行 App 查到的當月消費總額" htmlFor={amountId} error={error} hint="查詢區間請設為該月 1 日到月底；已包含的保險、電話費等會自動扣除。">
+        <Field label="本月信用卡消費總額" htmlFor={amountId} error={error} hint="依 App 的消費月份（1 日至月底）填寫；固定與額外消費會自動分類並扣重。">
           <AmountInput id={amountId} value={amount} onChange={(v) => { setAmount(v); setError(null) }} invalid={!!error} />
         </Field>
         <label className="check-row">
@@ -149,9 +151,10 @@ export function CardMonthSheet({
               <span className="v num minus">−{formatMoney(d.amount)}</span>
             </div>
           ))}
-          {line.deductions.length === 0 && (
+          {line.extraDeductionTotal > 0 && <div className="kv"><span className="k">信用卡額外消費</span><span className="v num minus">−{formatMoney(line.extraDeductionTotal)}</span></div>}
+          {line.deductions.length === 0 && line.extraDeductionTotal === 0 && (
             <div className="kv">
-              <span className="k t-muted">本月沒有從這張卡扣款的已確認固定支出</span>
+              <span className="k t-muted">本月沒有需要扣重的項目</span>
             </div>
           )}
           <div className="kv total">
@@ -164,13 +167,13 @@ export function CardMonthSheet({
         {exceeds && (
           <div className="callout callout-danger" style={{ marginTop: 10 }}>
             <CircleAlert size={16} />
-            <span>扣除的固定支出大於當月消費總額，請確認總額或固定支出的扣款卡別是否正確。</span>
+            <span>已列入項目大於當月消費總額。自動固定項目會先列為待確認，請修正卡片總額或逐項確認。</span>
           </div>
         )}
         {line.deductions.length > 0 && (
           <div className="callout callout-info" style={{ marginTop: 10 }}>
             <Info size={16} />
-            <span>扣除項目來自本月已確認、且由這張卡扣款的固定支出。要調整請點首頁的該筆固定支出。</span>
+            <span>這些支出已在卡片月總額內，會先扣除再分類顯示，不會重複計算。</span>
           </div>
         )}
       </div>
@@ -181,9 +184,9 @@ export function CardMonthSheet({
         </Field>
       </div>
 
-      {dueDate && (
+      {(dueDate || bill) && (
         <div className="sec">
-          <h3 className="sec-title">本月卡費繳款</h3>
+          <h3 className="sec-title">{formatYmLabel(ym)}截止的卡費</h3>
           <div className="breakdown">
             <div className="kv">
               <span className="k">本月截止日（可單獨修改）</span>
@@ -192,7 +195,7 @@ export function CardMonthSheet({
                   type="date"
                   className="input"
                   style={{ minHeight: 40, padding: '6px 10px', width: 'auto' }}
-                  value={dueDate}
+                  value={dueDate ?? ''}
                   min={`${ym}-01`}
                   max={clampDay(ym, 31)}
                   onChange={(e) => {
@@ -214,17 +217,15 @@ export function CardMonthSheet({
             )}
             <div className="kv">
               <span className="k">
-                {formatYmdShort(dueDate)}（{weekdayLabel(dueDate)}）
+                {dueDate ? `${formatYmdShort(dueDate)}（${weekdayLabel(dueDate)}）` : '未設定截止日'}
               </span>
-              {bill?.paidDate ? (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void markBillPaid(line.card.id, ym, null).then(() => toast('已改回未繳'))}>
-                  已繳 {formatYmdShort(bill.paidDate).slice(5)} · 改回未繳
-                </button>
-              ) : (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void markBillPaid(line.card.id, ym, today).then(() => toast('已標記已繳'))}>
-                  標記已繳
-                </button>
-              )}
+              <span className="v">{bill?.paidDate ? `已繳 ${formatYmdShort(bill.paidDate)}` : bill?.noBill ? '本月無須繳' : '尚未繳款'}</span>
+            </div>
+            <div className="kv"><span className="k">實際繳款日</span><input type="date" className="input" style={{ width: 'auto', minHeight: 40 }} value={paymentDate} max={today} onChange={(e) => setPaymentDate(e.target.value)} /></div>
+            <div className="inline-actions">
+              <button type="button" className="btn btn-secondary btn-sm" disabled={!paymentDate || paymentDate > today} onClick={() => void markBillPaid(line.card.id, ym, paymentDate).then(() => toast('已記錄繳款日期')).catch((e) => toast(errorMessage(e), 'error'))}>已繳</button>
+              {!bill?.paidDate && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void markBillNoPayment(line.card.id, ym, !bill?.noBill).then(() => toast(bill?.noBill ? '已恢復提醒' : '已標記本月無須繳')).catch((e) => toast(errorMessage(e), 'error'))}>{bill?.noBill ? '恢復提醒' : '本月無須繳'}</button>}
+              {(bill?.paidDate || bill?.noBill) && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void markBillPaid(line.card.id, ym, null).then(() => toast('已改回未繳')).catch((e) => toast(errorMessage(e), 'error'))}>改回未繳</button>}
             </div>
           </div>
         </div>

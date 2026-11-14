@@ -39,7 +39,7 @@ export function monthStatus(r: MonthResult): { tone: Tone; text: string } {
   if (r.pendingFixed > 0) parts.push(`${r.pendingFixed} 項待確認`)
   if (r.hasAnomaly) {
     const n = r.cards.filter((c) => c.exceedsTotal).length
-    return { tone: 'danger', text: `金額異常 · ${n} 張卡扣除大於總額` }
+    return { tone: 'danger', text: `金額異常 · ${n} 張卡已列入項目大於總額` }
   }
   if (r.phase === 'future') return { tone: 'muted', text: parts.length ? `未來月份 · ${parts.join(' · ')}` : '未來月份' }
   if (r.phase === 'current') {
@@ -52,7 +52,8 @@ export function monthStatus(r: MonthResult): { tone: Tone; text: string } {
 }
 
 export function cardSub(c: CardLine): { tone: Tone; text: string } {
-  if (c.exceedsTotal) return { tone: 'danger', text: `扣除 ${formatMoney(c.deductionTotal)} 大於總額 ${formatMoney(c.raw ?? 0)}` }
+  if (c.exceedsTotal) return { tone: 'danger', text: `已列入項目大於總額 ${formatMoney(c.raw ?? 0)}，請確認` }
+  if (!c.required && c.status === 'missing') return { tone: 'muted', text: '僅卡費繳款' }
   if (c.status === 'missing') {
     return c.deductions.length
       ? { tone: 'warn', text: `尚未輸入本月總額 · 已有 ${c.deductions.length} 筆固定支出` }
@@ -68,6 +69,8 @@ export function cardSub(c: CardLine): { tone: Tone; text: string } {
 /** 固定支出列右側（金額欄）：已確認顯示金額，其他狀態顯示簡短狀態字。 */
 export function fixedSlot(line: FixedLine): { tone: Tone | 'normal'; text: string } {
   switch (line.state) {
+    case 'automatic':
+      return { tone: 'normal', text: formatMoney(line.amount ?? 0) }
     case 'confirmed':
       return { tone: 'normal', text: formatMoney(line.amount ?? 0) }
     case 'pending':
@@ -88,7 +91,7 @@ export function fixedSlot(line: FixedLine): { tone: Tone | 'normal'; text: strin
 
 /** 本月沒有花到錢、也不用處理的狀態（首頁淡色顯示；分享圖片收成一行）。 */
 export function isQuietLine(line: FixedLine): boolean {
-  return line.state !== 'confirmed' && line.state !== 'pending' && line.state !== 'carried'
+  return line.state !== 'confirmed' && line.state !== 'automatic' && line.state !== 'pending' && line.state !== 'carried'
 }
 
 /** 固定支出列的小字：歸屬對象（保險）＋扣款來源或補充說明。狀態本身已寫在右側金額欄，這裡不重複。 */
@@ -98,12 +101,14 @@ export function fixedMeta(line: FixedLine, ym: string, labels: Labels): { tone: 
   const o = line.occurrence
   const lead = (s: string) => [who, s].filter(Boolean).join(' · ')
   switch (line.state) {
+    case 'automatic':
+      return { tone: 'muted', text: lead(`${labels.source(o?.sourceId ?? t.defaultSourceId)} · ${o?.backfilled ? '依目前預設回填' : '已列入'}`) }
     case 'confirmed': {
       const period = line.periodYm && line.periodYm !== ym ? `${monthLabel(line.periodYm)}期 · ` : ''
       return { tone: 'muted', text: lead(`${period}${labels.source(o?.sourceId ?? null)}`) }
     }
     case 'pending':
-      return { tone: 'warn', text: lead(t.defaultAmount !== null ? `參考 ${formatMoney(t.defaultAmount)}` : '') }
+      return { tone: 'warn', text: lead((o?.amount ?? t.defaultAmount) !== null ? `參考 ${formatMoney((o?.amount ?? t.defaultAmount)!)}` : '') }
     case 'carried':
       return { tone: 'warn', text: lead(`${monthLabel(line.periodYm!)}期延後`) }
     case 'deferred':
@@ -121,11 +126,13 @@ export function fixedMeta(line: FixedLine, ym: string, labels: Labels): { tone: 
   }
 }
 
-/** 固定支出卡標題下的一行：「已扣 4 項 · 待確認 1 項」。 */
+/** 固定支出卡標題下的一行。信用卡自動列入與手動記錄分開顯示。 */
 export function fixedCaption(r: MonthResult): { tone: Tone; text: string }[] {
   const paid = r.fixed.filter((l) => l.state === 'confirmed').length
+  const automatic = r.fixed.filter((l) => l.state === 'automatic').length
   const parts: { tone: Tone; text: string }[] = []
-  if (paid > 0) parts.push({ tone: 'muted', text: `已扣 ${paid} 項` })
+  if (paid > 0) parts.push({ tone: 'muted', text: `已記錄 ${paid} 項` })
+  if (automatic > 0) parts.push({ tone: 'muted', text: `已列入 ${automatic} 項` })
   if (r.pendingFixed > 0) parts.push({ tone: 'warn', text: `待確認 ${r.pendingFixed} 項` })
   if (parts.length === 0) parts.push({ tone: 'muted', text: '本月沒有扣款' })
   return parts

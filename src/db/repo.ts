@@ -27,7 +27,7 @@ import {
   type YM,
   type YMD,
 } from '../domain/types'
-import { isValidYm, isValidYmd, ymOf } from '../domain/ym'
+import { addMonths, isActiveIn, isValidYm, isValidYmd, todayYmd, ymOf } from '../domain/ym'
 import { db as defaultDb, newId, type HomeExpenseDB } from './db'
 
 export class ValidationError extends Error {
@@ -292,7 +292,12 @@ async function upsertBill(cardId: ID, dueYm: YM, patch: Partial<CardBill>, d: Ho
 
 export async function markBillPaid(cardId: ID, dueYm: YM, paidDate: YMD | null, d: HomeExpenseDB = defaultDb) {
   must(paidDate === null || isValidYmd(paidDate), '日期格式錯誤')
-  await upsertBill(cardId, dueYm, { paidDate }, d)
+  must(paidDate === null || paidDate <= todayYmd(), '已繳日期不能晚於今天')
+  await upsertBill(cardId, dueYm, { paidDate, noBill: false }, d)
+}
+
+export async function markBillNoPayment(cardId: ID, dueYm: YM, noBill: boolean, d: HomeExpenseDB = defaultDb) {
+  await upsertBill(cardId, dueYm, { noBill, paidDate: null }, d)
 }
 
 export async function setBillDueDate(cardId: ID, dueYm: YM, dueDate: YMD | null, d: HomeExpenseDB = defaultDb) {
@@ -448,7 +453,7 @@ export async function updateTemplate(
   d: HomeExpenseDB = defaultDb,
 ): Promise<void> {
   checkOrder(patch.order)
-  await d.transaction('rw', d.templates, d.insurance, d.sources, d.beneficiaries, async () => {
+  await d.transaction('rw', d.templates, d.insurance, d.sources, d.beneficiaries, d.occurrences, async () => {
     const t = await d.templates.get(id)
     must(t, '找不到這個項目')
     const next: FixedTemplate = { ...t, ...patch, updatedAt: Date.now() }
@@ -457,6 +462,40 @@ export async function updateTemplate(
     validateTemplate(next)
     checkRange(next.startYm, next.endYm)
     if (next.defaultSourceId) must(await d.sources.get(next.defaultSourceId), '找不到預設扣款來源')
+    // 修改預設值之前保存舊月份快照，避免歷史月份跟著新金額／來源重算。
+    const oldSource = t.defaultSourceId ? await d.sources.get(t.defaultSourceId) : undefined
+    if (t.cycleMonths !== null || next.cycleMonths !== null) {
+      const lastYm = ymOf(todayYmd())
+      const oldRows = await d.occurrences.where('templateId').equals(id).toArray()
+      const existing = new Set(oldRows.map((o) => o.periodKey))
+      for (const o of oldRows) {
+        if (o.periodYm === null || o.baseline || o.status === 'not-due' || o.status === 'hidden' || !isDueMonth(t, o.periodYm)) continue
+        const automatic = t.amountMode === 'fixed' && t.defaultAmount !== null && oldSource?.kind === 'card'
+        await d.occurrences.update(o.id, { baseline: {
+          status: automatic ? 'confirmed' : 'pending', amount: t.defaultAmount,
+          sourceId: t.defaultSourceId, backfilled: automatic && o.periodYm < lastYm,
+        } })
+      }
+      const firstYm = t.startYm < next.startYm ? t.startYm : next.startYm
+      for (let period = firstYm, n = 0; period <= lastYm && n < 1200; period = addMonths(period, 1), n++) {
+        if (existing.has(period)) continue
+        const now = Date.now()
+        const due = isDueMonth(t, period)
+        const automatic = due && t.amountMode === 'fixed' && t.defaultAmount !== null && oldSource?.kind === 'card'
+        const baseline = due ? {
+          status: automatic ? 'confirmed' as const : 'pending' as const, amount: t.defaultAmount,
+          sourceId: t.defaultSourceId, backfilled: automatic && period < lastYm,
+        } : undefined
+        await d.occurrences.add({
+          id: newId(), templateId: id, periodKey: period, periodYm: period,
+          status: !due ? isActiveIn(t, period) ? 'not-due' : 'hidden' : automatic ? 'confirmed' : 'pending',
+          actualDate: null, actualYm: automatic ? period : null, amount: due ? t.defaultAmount : null,
+          sourceId: due ? t.defaultSourceId : null, baseline,
+          inCardTotal: true, automatic, backfilled: automatic && period < lastYm,
+          note: '', createdAt: now, updatedAt: now,
+        })
+      }
+    }
     await d.templates.put(next)
     if (insurance !== undefined) {
       if (next.kind === 'insurance' && insurance) {
@@ -475,9 +514,16 @@ export async function updateTemplate(
 }
 
 export async function deleteTemplate(id: ID, d: HomeExpenseDB = defaultDb) {
-  await d.transaction('rw', d.templates, d.insurance, d.occurrences, async () => {
-    const n = await d.occurrences.where('templateId').equals(id).count()
-    must(n === 0, '這個項目已有繳費紀錄，只能停用，不能刪除')
+  await d.transaction('rw', d.templates, d.insurance, d.occurrences, d.sources, async () => {
+    const rows = await d.occurrences.where('templateId').equals(id).toArray()
+    must(!rows.some((o) => o.status === 'confirmed' || o.status === 'skipped' || o.status === 'deferred'), '這個項目已有繳費紀錄，只能停用，不能刪除')
+    const t = await d.templates.get(id)
+    const source = t?.defaultSourceId ? await d.sources.get(t.defaultSourceId) : undefined
+    if (t && source?.kind === 'card' && t.amountMode === 'fixed' && t.cycleMonths !== null) {
+      for (let period = t.startYm, count = 0; period <= ymOf(todayYmd()) && count < 1200; period = addMonths(period, 1), count++)
+        must(!isDueMonth(t, period), '這個項目已有自動列入的月份，只能停用，不能刪除')
+    }
+    if (rows.length) await d.occurrences.bulkDelete(rows.map((o) => o.id))
     await d.insurance.delete(id)
     await d.templates.delete(id)
   })
@@ -491,7 +537,9 @@ export interface ConfirmInput {
   periodYm: YM | null
   /** 修改既有不定期紀錄時傳入其 id。 */
   occurrenceId?: ID
-  actualDate: YMD
+  actualDate: YMD | null
+  /** 不定期信用卡項目使用目前查看的月份。 */
+  recordYm?: YM
   amount: number
   sourceId: ID | null
   inCardTotal: boolean
@@ -500,10 +548,11 @@ export interface ConfirmInput {
 
 /**
  * 確認一期扣款。週期性項目以 [templateId+periodKey] 為唯一鍵：同一期再確認一次是「更新」，不會新增第二筆。
- * 實際扣款日可以不在預計月份（延後或提前），金額計入實際扣款日所在月份。
+ * 信用卡依期別月份計入，不要求刷卡日期；銀行／現金依實際付款日計入。
  */
 export async function confirmOccurrence(input: ConfirmInput, d: HomeExpenseDB = defaultDb): Promise<Occurrence> {
-  must(isValidYmd(input.actualDate), '實際扣款日期格式錯誤')
+  must(input.actualDate === null || isValidYmd(input.actualDate), '實際扣款日期格式錯誤')
+  must(input.recordYm === undefined || isValidYm(input.recordYm), '記帳月份格式錯誤')
   must(isValidAmount(input.amount), '金額需為 0 以上的整數')
   must(input.periodYm === null || isValidYm(input.periodYm), '預計月份格式錯誤')
   must(typeof input.inCardTotal === 'boolean', '「包含在卡片總額」格式錯誤')
@@ -511,7 +560,10 @@ export async function confirmOccurrence(input: ConfirmInput, d: HomeExpenseDB = 
     const t = await d.templates.get(input.templateId)
     must(t, '找不到這個項目')
     must((t.cycleMonths === null) === (input.periodYm === null), '週期設定與預計月份不一致')
-    if (input.sourceId) must(await d.sources.get(input.sourceId), '找不到扣款來源')
+    const source = input.sourceId ? await d.sources.get(input.sourceId) : undefined
+    if (input.sourceId) must(source, '找不到扣款來源')
+    if (source?.kind !== 'card') must(input.actualDate !== null, '請選擇實際付款日期')
+    if (source?.kind === 'card' && input.periodYm === null) must(input.recordYm || input.actualDate, '請指定記帳月份')
     const now = Date.now()
     let existing: Occurrence | undefined
     if (input.periodYm !== null) {
@@ -523,14 +575,21 @@ export async function confirmOccurrence(input: ConfirmInput, d: HomeExpenseDB = 
       must(existing && existing.templateId === input.templateId, '找不到這筆紀錄')
     }
     const id = existing?.id ?? newId()
+    const baseline = existing?.baseline ?? (input.periodYm && t.amountMode === 'fixed' && t.defaultAmount !== null &&
+      (t.defaultSourceId ? (await d.sources.get(t.defaultSourceId))?.kind === 'card' : false)
+      ? { status: 'confirmed' as const, amount: t.defaultAmount, sourceId: t.defaultSourceId, backfilled: input.periodYm < ymOf(todayYmd()) }
+      : undefined)
     const row: Occurrence = {
       id,
       templateId: input.templateId,
       periodKey: input.periodYm ?? existing?.periodKey ?? `x:${id}`,
       periodYm: input.periodYm,
       status: 'confirmed',
-      actualDate: input.actualDate,
-      actualYm: ymOf(input.actualDate),
+      actualDate: source?.kind === 'card' ? null : input.actualDate,
+      actualYm: source?.kind === 'card' ? (input.periodYm ?? input.recordYm ?? ymOf(input.actualDate!)) : ymOf(input.actualDate!),
+      automatic: false,
+      backfilled: false,
+      baseline,
       amount: input.amount,
       sourceId: input.sourceId,
       inCardTotal: input.inCardTotal,
@@ -552,11 +611,15 @@ export async function markOccurrence(
   d: HomeExpenseDB = defaultDb,
 ): Promise<void> {
   must(isValidYm(periodYm), '月份格式錯誤')
-  await d.transaction('rw', d.occurrences, d.templates, async () => {
+  await d.transaction('rw', d.occurrences, d.templates, d.sources, async () => {
     const t = await d.templates.get(templateId)
     must(t && t.cycleMonths !== null, '不定期項目沒有「期」可以標記')
     const existing = await d.occurrences.where('[templateId+periodKey]').equals([templateId, periodYm]).first()
     must(existing || isDueMonth(t, periodYm), '這個月份不是該項目的到期月份')
+    const defaultSource = t.defaultSourceId ? await d.sources.get(t.defaultSourceId) : undefined
+    const baseline = existing?.baseline ?? (t.amountMode === 'fixed' && t.defaultAmount !== null && defaultSource?.kind === 'card'
+      ? { status: 'confirmed' as const, amount: t.defaultAmount, sourceId: defaultSource.id, backfilled: periodYm < ymOf(todayYmd()) }
+      : undefined)
     const now = Date.now()
     await d.occurrences.put({
       id: existing?.id ?? newId(),
@@ -566,6 +629,8 @@ export async function markOccurrence(
       status,
       actualDate: null,
       actualYm: null,
+      automatic: false,
+      baseline,
       amount: null,
       sourceId: existing?.sourceId ?? null,
       inCardTotal: existing?.inCardTotal ?? true,
@@ -578,7 +643,19 @@ export async function markOccurrence(
 
 /** 撤銷某一期的處理，回到「待確認」（週期性）或刪除該筆（不定期）。 */
 export async function resetOccurrence(id: ID, d: HomeExpenseDB = defaultDb) {
-  await d.occurrences.delete(id)
+  await d.transaction('rw', d.occurrences, async () => {
+    const existing = await d.occurrences.get(id)
+    if (!existing) return
+    if (!existing.baseline || !existing.periodYm) return d.occurrences.delete(id)
+    const base = existing.baseline
+    await d.occurrences.put({
+      ...existing, status: base.status, actualDate: null,
+      actualYm: base.status === 'confirmed' ? existing.periodYm : null,
+      amount: base.amount, sourceId: base.sourceId, inCardTotal: true,
+      automatic: base.status === 'confirmed', backfilled: base.backfilled,
+      note: '', updatedAt: Date.now(),
+    })
+  })
 }
 
 // ───────────────────────── 額外消費 ─────────────────────────
@@ -586,7 +663,9 @@ export async function resetOccurrence(id: ID, d: HomeExpenseDB = defaultDb) {
 export interface ExtraInput {
   name: string
   amount: number
-  date: YMD
+  date: YMD | null
+  /** 信用卡消費歸屬月；銀行／現金仍由付款日期決定。 */
+  ym?: YM
   sourceId: ID | null
   note: string
 }
@@ -594,9 +673,13 @@ export interface ExtraInput {
 export async function saveExtra(input: ExtraInput, id: ID | null, d: HomeExpenseDB = defaultDb): Promise<ExtraExpense> {
   const name = cleanName(input.name, '消費名稱')
   must(isValidAmount(input.amount), '金額需為 0 以上的整數')
-  must(isValidYmd(input.date), '日期格式錯誤')
+  must(input.date === null || isValidYmd(input.date), '日期格式錯誤')
+  must(input.ym === undefined || isValidYm(input.ym), '月份格式錯誤')
   return d.transaction('rw', d.extras, d.sources, async () => {
-    if (input.sourceId) must(await d.sources.get(input.sourceId), '找不到付款方式')
+    const source = input.sourceId ? await d.sources.get(input.sourceId) : undefined
+    if (input.sourceId) must(source, '找不到付款方式')
+    if (source?.kind !== 'card') must(input.date !== null, '請選擇付款日期')
+    if (source?.kind === 'card') must(input.ym || input.date, '請指定消費月份')
     const existing = id ? await d.extras.get(id) : undefined
     must(!id || existing, '找不到這筆消費')
     const now = Date.now()
@@ -604,8 +687,8 @@ export async function saveExtra(input: ExtraInput, id: ID | null, d: HomeExpense
       id: existing?.id ?? newId(),
       name,
       amount: input.amount,
-      date: input.date,
-      ym: ymOf(input.date),
+      date: source?.kind === 'card' ? null : input.date,
+      ym: source?.kind === 'card' ? (input.ym ?? ymOf(input.date!)) : ymOf(input.date!),
       sourceId: input.sourceId,
       note: cleanText(input.note),
       createdAt: existing?.createdAt ?? now,

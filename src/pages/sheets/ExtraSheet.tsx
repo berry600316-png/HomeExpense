@@ -10,7 +10,7 @@ import { Sheet } from '../../ui/Sheet'
 import { errorMessage, useToast } from '../../ui/Toast'
 import './sheets.css'
 
-/** 新增／修改額外消費：不在信用卡月總額內、也不是固定支出的實際花費。 */
+/** 新增／修改非固定的消費。信用卡消費會從月總額扣重。 */
 export function ExtraSheet({
   open,
   onClose,
@@ -55,12 +55,12 @@ export function ExtraSheet({
     if (!name.trim()) errs.name = '請輸入消費名稱'
     if (n === null) errs.amount = '請輸入金額'
     else if (Number.isNaN(n)) errs.amount = '金額只能是 0 以上的整數'
-    if (!isValidYmd(date)) errs.date = '請選擇日期'
+    if (src?.kind !== 'card' && !isValidYmd(date)) errs.date = '請選擇付款日期'
     setErrors(errs)
     if (Object.keys(errs).length || n === null || Number.isNaN(n)) return
     setBusy(true)
     try {
-      const saved = await saveExtra({ name, amount: n, date, sourceId, note }, extra?.id ?? null)
+      const saved = await saveExtra({ name, amount: n, date: src?.kind === 'card' ? null : date, ym, sourceId, note }, extra?.id ?? null)
       toast(`${extra ? '已更新' : '已新增'} ${saved.name} ${formatMoney(saved.amount)}${saved.ym !== ym ? `（記在 ${formatYmLabel(saved.ym)}）` : ''}`)
       onClose()
     } catch (e) {
@@ -89,7 +89,7 @@ export function ExtraSheet({
       open={open}
       onClose={onClose}
       title={extra ? '編輯額外消費' : '新增額外消費'}
-      subtitle="不在信用卡月總額內的花費"
+      subtitle={`${formatYmLabel(ym)}的其他花費`}
       footer={
         <button type="button" className="btn btn-primary" onClick={() => void onSave()} disabled={busy}>
           {extra ? '儲存' : '新增'}
@@ -97,10 +97,6 @@ export function ExtraSheet({
       }
     >
       <div className="form">
-        <div className="callout callout-info">
-          <Info size={16} />
-          <span>刷「已登記信用卡」的消費已經包含在該卡月總額裡，不用記在這裡，否則會重複計算。</span>
-        </div>
         <Field label="消費名稱" htmlFor={ids.name} error={errors.name}>
           <input id={ids.name} className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="例如：銀行轉帳買家電" aria-invalid={!!errors.name || undefined} />
         </Field>
@@ -108,9 +104,9 @@ export function ExtraSheet({
           <AmountInput id={ids.amount} value={amount} onChange={setAmount} invalid={!!errors.amount} />
         </Field>
         <div className="row-2">
-          <Field label="日期" htmlFor={ids.date} error={errors.date}>
+          {src?.kind !== 'card' && <Field label="實際付款日" htmlFor={ids.date} error={errors.date}>
             <DateInput id={ids.date} value={date} onChange={setDate} />
-          </Field>
+          </Field>}
           <Field label="付款方式（選填）" htmlFor={ids.source}>
             <SourceSelect id={ids.source} data={data} value={sourceId} onChange={setSourceId} allowEmpty emptyLabel="不指定" />
           </Field>
@@ -118,7 +114,7 @@ export function ExtraSheet({
         {src?.kind === 'card' && (
           <div className="callout callout-warn">
             <Info size={16} />
-            <span>你選了信用卡。若這筆已包含在該卡當月消費總額內，請不要再記一次。</span>
+            <span>列入 {formatYmLabel(ym)} 消費；若已輸入卡片月總額，系統會自動扣重。</span>
           </div>
         )}
         <Field label="備註（選填）" htmlFor={ids.note}>

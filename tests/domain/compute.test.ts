@@ -128,16 +128,16 @@ describe('#7 非到期月份不計入固定支出', () => {
   })
 })
 
-describe('#8 到期但未確認不計入支出', () => {
-  it('待確認項目不計金額、不從卡片扣除，且月份標示為未完成', () => {
+describe('#8 信用卡固定金額免逐筆確認', () => {
+  it('舊月份缺少確認紀錄時，依目前預設金額自動列入並扣重', () => {
     const { input, ins1, taishin } = october2026()
     input.occurrences = input.occurrences.filter((o) => o.templateId !== ins1.id)
     const r = computeMonth('2026-10', input, NOW)
-    expect(r.fixed.find((l) => l.template.id === ins1.id)!.state).toBe('pending')
-    expect(r.totals.fixed).toBe(2420)
-    expect(cardLine(r, taishin.id).variable).toBe(7280)
-    expect(r.pendingFixed).toBe(1)
-    expect(r.complete).toBe(false)
+    expect(r.fixed.find((l) => l.template.id === ins1.id)!.state).toBe('automatic')
+    expect(r.totals.fixed).toBe(4420)
+    expect(cardLine(r, taishin.id).variable).toBe(5280)
+    expect(r.pendingFixed).toBe(0)
+    expect(r.complete).toBe(true)
   })
 })
 
@@ -276,14 +276,14 @@ describe('#15 延後扣款不重複認列', () => {
     expect(nov.totals.fixed).toBe(0)
   })
 
-  it('延後到 11 月確認：只計入 11 月一次；10 月顯示「實際在其他月份扣款」', () => {
+  it('10 月期信用卡即使 11 月才刷，仍只計入 10 月', () => {
     const { s, t, input } = deferredCase()
     input.occurrences.push(paid(t, '2026-11-05', 6000, s, { periodYm: '2026-10', periodKey: '2026-10' }))
     const results = ['2026-09', '2026-10', '2026-11', '2026-12', '2027-04'].map((ym) => computeMonth(ym, input, NOW))
     const fixedTotals = results.map((r) => r.totals.fixed)
-    expect(fixedTotals).toEqual([0, 0, 6000, 0, 0])
-    expect(results[1]!.fixed.map((l) => l.state)).toEqual(['paid-other-month'])
-    expect(results[2]!.fixed.map((l) => [l.state, l.periodYm])).toEqual([['confirmed', '2026-10']])
+    expect(fixedTotals).toEqual([0, 6000, 0, 0, 0])
+    expect(results[1]!.fixed.map((l) => l.state)).toEqual(['confirmed'])
+    expect(results[2]!.fixed.map((l) => [l.state, l.periodYm])).toEqual([['not-due', null]])
     expect(results[2]!.pendingFixed).toBe(0)
     // 延後不移動之後的週期：下一期仍是 2027-04
     expect(results[4]!.fixed.map((l) => l.state)).toEqual(['pending'])
@@ -305,15 +305,15 @@ describe('#15 延後扣款不重複認列', () => {
       ['pending', '2026-11'],
       ['carried', '2026-10'],
     ])
-    // 兩期都在 11 月確認 → 11 月計兩筆，各一次
+    // 信用卡按期別月份計算，10 月期不移入 11 月。
     input.occurrences = [
       paid(t, '2026-11-03', 720, s, { periodYm: '2026-10', periodKey: '2026-10' }),
       paid(t, '2026-11-20', 699, s),
     ]
     const nov2 = computeMonth('2026-11', input, NOW)
-    expect(nov2.fixed.filter((l) => l.state === 'confirmed').map((l) => l.amount)).toEqual([720, 699])
-    expect(nov2.totals.fixed).toBe(1419)
-    expect(computeMonth('2026-10', input, NOW).totals.fixed).toBe(0)
+    expect(nov2.fixed.filter((l) => l.state === 'confirmed').map((l) => l.amount)).toEqual([699])
+    expect(nov2.totals.fixed).toBe(699)
+    expect(computeMonth('2026-10', input, NOW).totals.fixed).toBe(720)
   })
 
   it('本期未扣款：永不計入，也不會帶到下個月', () => {

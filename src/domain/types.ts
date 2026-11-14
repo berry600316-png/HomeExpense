@@ -99,7 +99,7 @@ export interface Beneficiary {
   archived: boolean
 }
 
-export type OccurrenceStatus = 'confirmed' | 'skipped' | 'deferred'
+export type OccurrenceStatus = 'confirmed' | 'pending' | 'not-due' | 'hidden' | 'skipped' | 'deferred'
 
 /**
  * 固定支出某一期的實際狀態。只有使用者「動過」的期數才會存在；
@@ -113,10 +113,16 @@ export interface Occurrence {
   /** 預計繳費年月；不定期項目為 null。 */
   periodYm: YM | null
   status: OccurrenceStatus
-  /** 實際扣款日；status='confirmed' 時必填。 */
+  /** 非信用卡的實際付款日；信用卡按消費歸屬月記帳，可為 null。 */
   actualDate: YMD | null
-  /** 由 actualDate 推得，存起來供索引查詢。 */
+  /** 計入支出的月份。信用卡週期項目用 periodYm，其他來源用付款日。 */
   actualYm: YM | null
+  /** 自動列入的信用卡固定金額快照；未設定代表使用者手動處理。 */
+  automatic?: boolean
+  /** 舊月份以當時可取得的預設金額回填；可逐月修改。 */
+  backfilled?: boolean
+  /** 修改模板前保存的該期原設定，讓「重設」不改寫舊月份。 */
+  baseline?: { status: 'confirmed' | 'pending'; amount: number | null; sourceId: ID | null; backfilled: boolean }
   amount: number | null
   sourceId: ID | null
   /** 刷卡時是否已包含在該卡當月總額內（預設 true）。非信用卡來源時無意義。 */
@@ -130,7 +136,7 @@ export interface ExtraExpense {
   id: ID
   name: string
   amount: number
-  date: YMD
+  date: YMD | null
   ym: YM
   /** 付款方式選填、不限制。 */
   sourceId: ID | null
@@ -155,6 +161,8 @@ export interface CardBill {
   dueDateOverride: YMD | null
   /** 按下「已繳」的日期；null = 未繳。只記日期，不記金額。 */
   paidDate: YMD | null
+  /** 此截止月份沒有卡費需要繳。 */
+  noBill?: boolean
   updatedAt: number
 }
 

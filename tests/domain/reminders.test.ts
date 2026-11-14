@@ -78,10 +78,12 @@ describe('卡費截止提醒', () => {
     expect(computeReminders('2026-11-10', [c], []).map((x) => x.dueDate)).toEqual(['2026-11-15'])
   })
 
-  it('未設定截止日不提醒；停用月份（含）之後的截止日不提醒', () => {
+  it('未設定截止日不提醒；停用後保留最後兩個截止月份', () => {
     expect(computeReminders('2026-10-22', [card('無截止日')], [])).toEqual([])
     const c = card('停用卡', { dueDay: 24, dueFrom: '2026-10-01', endYm: '2026-10' })
-    expect(computeReminders('2026-10-22', [c], [])).toEqual([])
+    expect(computeReminders('2026-10-22', [c], []).map((r) => r.dueYm)).toContain('2026-10')
+    expect(computeReminders('2026-11-22', [c], []).map((r) => r.dueYm)).toContain('2026-11')
+    expect(computeReminders('2026-12-22', [c], []).map((r) => r.dueYm)).not.toContain('2026-12')
   })
 
   it('每張卡各自的提前天數：A 卡 1 天前、B 卡 2 天前（同一天截止）', () => {

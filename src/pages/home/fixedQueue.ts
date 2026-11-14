@@ -2,7 +2,7 @@ import type { FixedLine } from '../../domain/compute'
 
 const priority = (line: FixedLine): number => {
   if (line.state === 'pending' || line.state === 'carried') return 0
-  if (line.state === 'confirmed') return 1
+  if (line.state === 'confirmed' || line.state === 'automatic') return 1
   if (line.state === 'not-due') return 2
   return 3
 }

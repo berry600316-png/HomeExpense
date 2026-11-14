@@ -81,7 +81,7 @@ export function FixedEditPage() {
     () =>
       data && t
         ? data.occurrences
-            .filter((o) => o.templateId === t.id)
+            .filter((o) => o.templateId === t.id && o.status !== 'not-due' && o.status !== 'hidden')
             .sort((a, b) => (b.actualDate ?? b.periodYm ?? '').localeCompare(a.actualDate ?? a.periodYm ?? ''))
         : [],
     [data, t],
@@ -248,7 +248,7 @@ export function FixedEditPage() {
             <Field label="週期基準月份" htmlFor={ids.anchor} hint="任一次的扣款月份，例如 4 月扣、每半年 → 4 月、10 月">
               <input id={ids.anchor} type="month" className="input" value={anchorYm} onChange={(e) => setAnchorYm(e.target.value)} />
             </Field>
-            <Field label="預計扣款日" htmlFor={ids.day}>
+            {data.sources.find((s) => s.id === sourceId)?.kind !== 'card' && <Field label="預計扣款日" htmlFor={ids.day}>
               <select id={ids.day} className="select" value={anchorDay ?? ''} onChange={(e) => setAnchorDay(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">未指定</option>
                 {Array.from({ length: 31 }, (_, i) => (
@@ -257,7 +257,7 @@ export function FixedEditPage() {
                   </option>
                 ))}
               </select>
-            </Field>
+            </Field>}
           </div>
         )}
         {preview.length > 0 && (
@@ -285,7 +285,7 @@ export function FixedEditPage() {
       {!isNew && (
         <>
           <h2 className="group-title">繳費紀錄</h2>
-          <HistoryList history={history} upcoming={[]} data={data} />
+          <HistoryList history={history} upcoming={[]} data={data} automaticFuture={amountMode === 'fixed' && data.sources.find((s) => s.id === sourceId)?.kind === 'card'} />
           {history.length > 0 && (
             <p className="t-muted" style={{ fontSize: 'var(--fs-xs)', margin: '6px 4px 0' }}>
               共 {history.filter((o) => o.status === 'confirmed').length} 次扣款，合計{' '}

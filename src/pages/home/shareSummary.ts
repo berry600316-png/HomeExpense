@@ -70,7 +70,7 @@ export function buildShareSummary(r: MonthResult, labels: Labels, today: YMD): S
 
   const extraRows: ShareRow[] = r.extras.map((e) => ({
     name: e.name,
-    sub: formatYmdShort(e.date).slice(5),
+    sub: e.date ? formatYmdShort(e.date).slice(5) : `${Number(e.ym.slice(5))} 月消費`,
     amount: formatMoney(e.amount),
     tone: 'normal',
   }))

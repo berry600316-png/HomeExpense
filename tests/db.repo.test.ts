@@ -182,7 +182,12 @@ describe('固定支出每期紀錄', () => {
     await repo.confirmOccurrence({ templateId: t.id, periodYm: '2026-10', actualDate: '2026-10-15', amount: 5800, sourceId: null, inCardTotal: true, note: '當期備註' }, d)
     const before = await d.occurrences.toArray()
     await repo.updateTemplate(t.id, { defaultAmount: 6000, defaultSourceId: bank.id, name: '新名稱', note: '長期備註改了' }, undefined, d)
-    expect(await d.occurrences.toArray()).toEqual(before)
+    const after = await d.occurrences.toArray()
+    expect(after.find((o) => o.id === before[0]!.id)).toMatchObject({
+      id: before[0]!.id, status: before[0]!.status, amount: before[0]!.amount,
+      sourceId: before[0]!.sourceId, actualDate: before[0]!.actualDate, note: before[0]!.note,
+    })
+    expect(after.filter((o) => o.id !== before[0]!.id).every((o) => o.status === 'pending' && o.amount === 5800)).toBe(true)
   })
 
   it('#15 延後再確認：同一筆紀錄從 deferred 變 confirmed，只計入實際月份', async () => {
@@ -341,7 +346,7 @@ describe('驗收回報：寫入驗證缺口', () => {
     await repo.markOccurrence(t.id, '2026-04', 'deferred', '', d)
     await repo.updateTemplate(t.id, { cycleMonths: 12, anchorYm: '2026-01' }, undefined, d)
     await repo.confirmOccurrence({ ...base, periodYm: '2026-04', actualDate: '2026-06-01' }, d)
-    expect((await d.occurrences.toArray()).map((o) => [o.periodYm, o.status])).toEqual([['2026-04', 'confirmed']])
+    expect((await d.occurrences.toArray()).filter((o) => o.status !== 'not-due' && o.status !== 'hidden').map((o) => [o.periodYm, o.status]).sort()).toEqual([['2026-04', 'confirmed'], ['2026-10', 'pending']])
   })
 
   it('inCardTotal 必須是布林值', async () => {

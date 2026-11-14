@@ -1,16 +1,17 @@
 /**
  * 每月計算引擎。純函式：輸入資料 → 該月所有衍生數字。不存任何衍生金額。
  *
- *   信用卡變動消費 = 卡片原始月總額 − Σ(已確認、付款來源為該卡、包含於卡片總額、實際扣款日在該月的固定支出)
- *   本月總花費     = Σ 信用卡變動消費 + Σ 已確認固定支出（不論來源） + Σ 額外消費
+ *   信用卡變動消費 = 卡片所屬月總額 − Σ(列入且包含於總額的固定支出) − Σ(該卡額外消費)
+ *   本月總花費     = Σ 信用卡變動消費 + Σ 已列入固定支出 + Σ 額外消費
  *
  * 防重複的結構保證：
  * - 每一期固定支出只有一個 sourceId，因此最多被一張卡扣除。
- * - 固定支出只依 actualYm 計入一個月份；預計月份與實際月份不同時，預計月份只顯示狀態、不計金額。
+ * - 信用卡週期固定支出依 periodYm 計入；其他來源依實際付款日計入。
  */
 import { isDueMonth } from './schedule'
 import type {
   CardMonth,
+  CardBill,
   CreditCard,
   ExtraExpense,
   FixedTemplate,
@@ -19,11 +20,12 @@ import type {
   PaymentSource,
   YM,
 } from './types'
-import { isActiveIn } from './ym'
+import { addMonths, isActiveIn } from './ym'
 
 export interface MonthInput {
   cards: CreditCard[]
   cardMonths: CardMonth[]
+  cardBills?: CardBill[]
   sources: PaymentSource[]
   templates: FixedTemplate[]
   occurrences: Occurrence[]
@@ -31,7 +33,9 @@ export interface MonthInput {
 }
 
 export type FixedLineState =
-  /** 已確認，實際扣款在本月 → 計入。 */
+  /** 信用卡週期固定金額，依所屬月自動列入。 */
+  | 'automatic'
+  /** 手動確認並計入本月。 */
   | 'confirmed'
   /** 本月到期，尚未處理。 */
   | 'pending'
@@ -54,7 +58,7 @@ export interface FixedLine {
   state: FixedLineState
   periodYm: YM | null
   occurrence: Occurrence | null
-  /** 計入本月的金額；只有 state='confirmed' 才有值。 */
+  /** 計入本月的金額。 */
   amount: number | null
   /** 從哪張卡的月總額扣除；null = 非信用卡或未包含在卡片總額。 */
   deductedFromCardId: ID | null
@@ -75,6 +79,7 @@ export interface CardLine {
   /** 本月是否必須輸入（區間內，或本月有固定支出從這張卡扣）。 */
   required: boolean
   deductions: Deduction[]
+  extraDeductionTotal: number
   deductionTotal: number
   /** 原始總額未輸入時為 null（不當作 0）。 */
   variable: number | null
@@ -131,7 +136,7 @@ export function deductionCardId(o: Occurrence, sourcesById: Map<ID, PaymentSourc
 
 /** 已確認且資料齊全（有金額、有實際日期）的期數才會計入。 */
 function isCountable(o: Occurrence): o is Occurrence & { amount: number; actualYm: YM } {
-  return o.status === 'confirmed' && o.amount !== null && o.actualYm !== null && o.actualDate !== null
+  return o.status === 'confirmed' && o.amount !== null && o.actualYm !== null
 }
 
 export function buildFixedLines(
@@ -139,6 +144,7 @@ export function buildFixedLines(
   templates: FixedTemplate[],
   occurrences: Occurrence[],
   sourcesById: Map<ID, PaymentSource>,
+  currentYm: YM = ym,
 ): FixedLine[] {
   const occByTemplate = new Map<ID, Occurrence[]>()
   for (const o of occurrences) {
@@ -154,7 +160,7 @@ export function buildFixedLines(
     )
     const own: FixedLine[] = []
     const push = (state: FixedLineState, o: Occurrence | null, periodYm: YM | null) => {
-      const counted = state === 'confirmed' && o !== null && isCountable(o)
+      const counted = (state === 'confirmed' || state === 'automatic') && o !== null && isCountable(o)
       own.push({
         key: o ? o.id : `${t.id}:${state}:${periodYm ?? ''}`,
         template: t,
@@ -166,9 +172,13 @@ export function buildFixedLines(
       })
     }
 
-    // 1. 實際扣款在本月的期數（不論原本預計哪個月）
+    // 1. 已記錄期數：信用卡按所屬月，其餘按實際付款月。
     for (const o of occs) {
-      if (isCountable(o) && o.actualYm === ym) push('confirmed', o, o.periodYm)
+      if (isCountable(o)) {
+        const source = o.sourceId ? sourcesById.get(o.sourceId) : undefined
+        const spendYm = source?.kind === 'card' && o.periodYm ? o.periodYm : o.actualYm
+        if (spendYm === ym) push(o.automatic ? 'automatic' : 'confirmed', o, o.periodYm)
+      }
     }
 
     // 2. 預計在本月的期數
@@ -176,10 +186,21 @@ export function buildFixedLines(
     if (forThisPeriod) {
       if (forThisPeriod.status === 'skipped') push('skipped', forThisPeriod, ym)
       else if (forThisPeriod.status === 'deferred') push('deferred', forThisPeriod, ym)
-      else if (forThisPeriod.status === 'confirmed' && forThisPeriod.actualYm !== ym)
+      else if (forThisPeriod.status === 'pending') push('pending', forThisPeriod, ym)
+      else if (forThisPeriod.status === 'not-due') push('not-due', forThisPeriod, ym)
+      else if (forThisPeriod.status === 'confirmed' && !own.some((l) => l.occurrence?.id === forThisPeriod.id))
         push('paid-other-month', forThisPeriod, ym)
     } else if (isDueMonth(t, ym)) {
-      push('pending', null, ym)
+      const source = t.defaultSourceId ? sourcesById.get(t.defaultSourceId) : undefined
+      if (ym <= currentYm && t.amountMode === 'fixed' && t.defaultAmount !== null && source?.kind === 'card') {
+        const auto: Occurrence = {
+          id: `auto:${t.id}:${ym}`, templateId: t.id, periodKey: ym, periodYm: ym,
+          status: 'confirmed', actualDate: null, actualYm: ym, amount: t.defaultAmount,
+          sourceId: source.id, inCardTotal: true, note: '', automatic: true, backfilled: ym < currentYm,
+          createdAt: t.createdAt, updatedAt: t.updatedAt,
+        }
+        push('automatic', auto, ym)
+      } else push('pending', null, ym)
     }
 
     // 3. 之前延後、仍未結案的期數
@@ -188,7 +209,7 @@ export function buildFixedLines(
     }
 
     // 4. 沒有任何狀態時，區間內的項目仍要顯示（規格 5.4：全部啟用中的項目都要顯示）
-    if (own.length === 0 && isActiveIn(t, ym)) {
+    if (own.length === 0 && forThisPeriod?.status !== 'hidden' && isActiveIn(t, ym)) {
       push(t.cycleMonths === null ? 'irregular-none' : 'not-due', null, null)
     }
 
@@ -199,7 +220,35 @@ export function buildFixedLines(
 
 export function computeMonth(ym: YM, input: MonthInput, currentYm: YM): MonthResult {
   const sourcesById = new Map(input.sources.map((s) => [s.id, s]))
-  const fixed = buildFixedLines(ym, input.templates, input.occurrences, sourcesById)
+  const fixed = buildFixedLines(ym, input.templates, input.occurrences, sourcesById, currentYm)
+
+  const recordByCard = new Map<ID, CardMonth>()
+  for (const r of input.cardMonths) if (r.ym === ym) recordByCard.set(r.cardId, r)
+  const extras = input.extras
+    .filter((e) => e.ym === ym)
+    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.createdAt - b.createdAt)
+  const extraByCard = new Map<ID, number>()
+  const shortageCards = new Set<ID>()
+  for (const e of extras) {
+    const source = e.sourceId ? sourcesById.get(e.sourceId) : undefined
+    if (source?.kind === 'card' && source.cardId)
+      extraByCard.set(source.cardId, (extraByCard.get(source.cardId) ?? 0) + e.amount)
+  }
+
+  // 原始卡片總額不足時，不能猜測哪筆自動固定金額有誤。全部暫停，待使用者修正或確認。
+  for (const card of input.cards) {
+    const raw = recordByCard.get(card.id)?.amount
+    if (raw === null || raw === undefined) continue
+    const related = fixed.filter((l) => l.deductedFromCardId === card.id)
+    const known = related.reduce((sum, l) => sum + (l.amount ?? 0), extraByCard.get(card.id) ?? 0)
+    if (known > 0 && known > raw) shortageCards.add(card.id)
+    if (known > 0 && known > raw) for (const line of related) {
+      if (line.state !== 'automatic') continue
+      line.state = 'pending'
+      line.amount = null
+      line.deductedFromCardId = null
+    }
+  }
 
   const deductionsByCard = new Map<ID, Deduction[]>()
   for (const line of fixed) {
@@ -210,21 +259,20 @@ export function computeMonth(ym: YM, input: MonthInput, currentYm: YM): MonthRes
     }
   }
 
-  const recordByCard = new Map<ID, CardMonth>()
-  for (const r of input.cardMonths) if (r.ym === ym) recordByCard.set(r.cardId, r)
-
   const issues: Issue[] = []
   const cards: CardLine[] = []
   for (const card of [...input.cards].sort(byOrder)) {
     const record = recordByCard.get(card.id) ?? null
     const deductions = deductionsByCard.get(card.id) ?? []
     const active = isActiveIn(card, ym)
-    if (!active && !record && deductions.length === 0) continue
+    const savedBill = input.cardBills?.some((b) => b.cardId === card.id && b.dueYm === ym) ?? false
+    const finalBill = savedBill || (card.endYm !== null && card.dueDay !== null && ym >= card.endYm && ym <= addMonths(card.endYm, 1))
+    if (!active && !record && deductions.length === 0 && !finalBill) continue
 
     const raw = record?.amount ?? null
-    const deductionTotal = deductions.reduce((s, d) => s + d.amount, 0)
+    const deductionTotal = deductions.reduce((s, d) => s + d.amount, extraByCard.get(card.id) ?? 0)
     const variable = raw === null ? null : raw - deductionTotal
-    const exceedsTotal = raw !== null && deductionTotal > 0 && deductionTotal > raw
+    const exceedsTotal = shortageCards.has(card.id) || (raw !== null && deductionTotal > 0 && deductionTotal > raw)
     const rawNegative = raw !== null && raw < 0
     const required = active || deductions.length > 0
     const status: CardStatus = raw === null ? 'missing' : raw === 0 ? 'zero' : 'entered'
@@ -236,12 +284,12 @@ export function computeMonth(ym: YM, input: MonthInput, currentYm: YM): MonthRes
         kind: 'deduction-exceeds-total',
         level: 'anomaly',
         cardId: card.id,
-        message: `${card.name} 扣除的固定支出大於當月消費總額`,
+        message: `${card.name} 已列入項目大於當月消費總額`,
       })
     if (rawNegative)
       issues.push({ kind: 'raw-negative', level: 'notice', cardId: card.id, message: `${card.name} 本月總額為負數` })
 
-    cards.push({ card, record, raw, status, required, deductions, deductionTotal, variable, exceedsTotal, rawNegative })
+    cards.push({ card, record, raw, status, required, deductions, extraDeductionTotal: extraByCard.get(card.id) ?? 0, deductionTotal, variable, exceedsTotal, rawNegative })
   }
 
   for (const line of fixed) {
@@ -253,10 +301,6 @@ export function computeMonth(ym: YM, input: MonthInput, currentYm: YM): MonthRes
         message: `${line.template.name} 待確認`,
       })
   }
-
-  const extras = input.extras
-    .filter((e) => e.ym === ym)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt)
 
   const cardVariable = cards.reduce((s, c) => s + (c.variable ?? 0), 0)
   const fixedTotal = fixed.reduce((s, l) => s + (l.amount ?? 0), 0)
@@ -274,7 +318,7 @@ export function computeMonth(ym: YM, input: MonthInput, currentYm: YM): MonthRes
     phase: ym < currentYm ? 'past' : ym > currentYm ? 'future' : 'current',
     missingCards,
     pendingFixed,
-    complete: missingCards === 0 && pendingFixed === 0,
+    complete: missingCards === 0 && pendingFixed === 0 && !cards.some((c) => c.exceedsTotal),
     hasAnomaly: cards.some((c) => c.exceedsTotal),
     issues,
   }

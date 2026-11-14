@@ -38,7 +38,7 @@ export function PendingFixedSheet({
             <button key={line.key} type="button" className="pending-fixed-row" onClick={() => onSelect(line)}>
               <span className="pending-fixed-name">{line.template.name}</span>
               <span className="pending-fixed-period">{line.periodYm ? `${formatYmLabel(line.periodYm)}期` : ''}{line.state === 'carried' ? ' · 延後' : ''}</span>
-              {line.template.defaultAmount !== null && <span className="pending-fixed-reference num">參考 {formatMoney(line.template.defaultAmount)}</span>}
+              {(line.occurrence?.amount ?? line.template.defaultAmount) !== null && <span className="pending-fixed-reference num">參考 {formatMoney((line.occurrence?.amount ?? line.template.defaultAmount)!)}</span>}
             </button>
           ))}
         </div>

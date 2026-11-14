@@ -249,7 +249,7 @@ export function HomePage() {
                     <span className="mini-name">{e.name}</span>
                     <span className="mini-amt num">{formatMoney(e.amount)}</span>
                   </span>
-                  <span className="mini-meta tone-muted">{formatYmdShort(e.date).slice(5)}</span>
+                  <span className="mini-meta tone-muted">{e.date ? formatYmdShort(e.date).slice(5) : `${Number(e.ym.slice(5))} 月消費`}</span>
                 </button>
               ))}
               <div className="half-spacer" />

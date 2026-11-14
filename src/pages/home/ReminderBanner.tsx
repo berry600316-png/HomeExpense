@@ -1,7 +1,7 @@
 import { BellRing, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { markBillPaid } from '../../db/repo'
+import { markBillNoPayment, markBillPaid } from '../../db/repo'
 import { computeReminders, type BillReminder } from '../../domain/reminders'
 import { formatYmdShort, weekdayLabel } from '../../domain/ym'
 import type { AllData } from '../../hooks/useData'
@@ -24,6 +24,7 @@ export function ReminderBanner({ data, today }: { data: AllData; today: string }
   const reminders = useMemo(() => computeReminders(today, data.cards, data.cardBills), [today, data.cards, data.cardBills])
   const [snoozed, setSnoozed] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [paymentDates, setPaymentDates] = useState<Record<string, string>>({})
 
   // 從背景回到前景 = 再次打開 App → 重新提醒
   useEffect(() => {
@@ -53,8 +54,20 @@ export function ReminderBanner({ data, today }: { data: AllData; today: string }
   const pay = async (r: BillReminder) => {
     setBusyId(`${r.cardId}|${r.dueYm}`)
     try {
-      await markBillPaid(r.cardId, r.dueYm, today)
+      await markBillPaid(r.cardId, r.dueYm, paymentDates[`${r.cardId}|${r.dueYm}`] ?? today)
       toast(`${r.cardName} 已標記繳款`)
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const noPayment = async (r: BillReminder) => {
+    setBusyId(`${r.cardId}|${r.dueYm}`)
+    try {
+      await markBillNoPayment(r.cardId, r.dueYm, true)
+      toast(`${r.cardName} 本月無須繳`)
     } catch (e) {
       toast(errorMessage(e), 'error')
     } finally {
@@ -88,7 +101,7 @@ export function ReminderBanner({ data, today }: { data: AllData; today: string }
                 <BellRing size={34} strokeWidth={1.8} />
               </div>
               <h2 id="rm-title">{anyOverdue ? '卡費已逾期' : '卡費快到期了'}</h2>
-              <p className="rm-lead">繳完請按「已繳」，之後就不會再提醒。</p>
+              <p className="rm-lead">繳完請選擇實際日期並按「已繳」。</p>
               <ul className="rm-list">
                 {reminders.map((r) => {
                   const key = `${r.cardId}|${r.dueYm}`
@@ -101,9 +114,11 @@ export function ReminderBanner({ data, today }: { data: AllData; today: string }
                         </div>
                       </div>
                       <div className="rm-left">{whenText(r)}</div>
+                      <input type="date" aria-label={`${r.cardName}實際繳款日`} value={paymentDates[key] ?? today} max={today} onChange={(e) => setPaymentDates((old) => ({ ...old, [key]: e.target.value }))} />
                       <button type="button" className="rm-pay" onClick={() => void pay(r)} disabled={busyId === key}>
                         已繳
                       </button>
+                      <button type="button" className="rm-later" onClick={() => void noPayment(r)} disabled={busyId === key}>本月無須繳</button>
                     </li>
                   )
                 })}

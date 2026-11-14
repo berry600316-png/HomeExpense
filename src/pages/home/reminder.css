@@ -109,13 +109,34 @@
 }
 
 .rm-list li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 14px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.08);
   text-align: left;
+}
+
+.rm-list li input[type='date'] {
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  color: #142138;
+  background: #fff;
+}
+
+.rm-list li .rm-later {
+  margin: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  white-space: nowrap;
 }
 
 .rm-list li.is-overdue {

@@ -12,9 +12,10 @@ export const BACKUP_APP_ID = 'homeexpense-tw'
 /**
  * 結構版本。
  * v1：提前天數是全域設定（settings 的 reminderDaysBefore）。
- * v2（2026-10-23）：提前天數改存在每張卡的 remindDays。v1 備份仍可還原，見 upgradeV1。
+ * v2（2026-10-23）：提前天數改存在每張卡的 remindDays。
+ * v3：信用卡支出可無逐筆日期，卡費可標本月無須繳；v1、v2 備份仍可還原。
  */
-export const BACKUP_SCHEMA_VERSION = 2
+export const BACKUP_SCHEMA_VERSION = 3
 
 const id = z.string().min(1).max(100)
 const ym = z.string().refine(isValidYm, '年月格式錯誤')
@@ -56,9 +57,12 @@ export const tableSchemas = {
     templateId: id,
     periodKey: z.string().min(1).max(120),
     periodYm: ym.nullable(),
-    status: z.enum(['confirmed', 'skipped', 'deferred']),
+    status: z.enum(['confirmed', 'pending', 'not-due', 'hidden', 'skipped', 'deferred']),
     actualDate: ymd.nullable(),
     actualYm: ym.nullable(),
+    automatic: z.boolean().optional(),
+    backfilled: z.boolean().optional(),
+    baseline: z.object({ status: z.enum(['confirmed', 'pending']), amount: moneyPos.nullable(), sourceId: id.nullable(), backfilled: z.boolean() }).optional(),
     amount: moneyPos.nullable(),
     sourceId: id.nullable(),
     inCardTotal: z.boolean(),
@@ -66,9 +70,9 @@ export const tableSchemas = {
     createdAt: ts,
     updatedAt: ts,
   }),
-  extras: z.object({ id, name: text.min(1), amount: moneyPos, date: ymd, ym, sourceId: id.nullable(), note: text, createdAt: ts, updatedAt: ts }),
+  extras: z.object({ id, name: text.min(1), amount: moneyPos, date: ymd.nullable(), ym, sourceId: id.nullable(), note: text, createdAt: ts, updatedAt: ts }),
   monthNotes: z.object({ ym, note: text, updatedAt: ts }),
-  cardBills: z.object({ id, cardId: id, dueYm: ym, dueDateOverride: ymd.nullable(), paidDate: ymd.nullable(), updatedAt: ts }),
+  cardBills: z.object({ id, cardId: id, dueYm: ym, dueDateOverride: ymd.nullable(), paidDate: ymd.nullable(), noBill: z.boolean().optional(), updatedAt: ts }),
   settings: z.object({ key: z.enum(['lastBackupAt']), value: z.unknown() }),
 } as const
 
@@ -177,7 +181,10 @@ export function validateBackup(raw: string): ValidationResult {
   const templateIds = new Set(data.templates.map((t) => t.id))
   const benIds = new Set(data.beneficiaries.map((b) => b.id))
   for (const r of data.cardMonths) if (!cardIds.has(r.cardId)) fail(`月總額指向不存在的信用卡（${r.ym}）`)
-  for (const r of data.cardBills) if (!cardIds.has(r.cardId)) fail(`卡費紀錄指向不存在的信用卡（${r.dueYm}）`)
+  for (const r of data.cardBills) {
+    if (!cardIds.has(r.cardId)) fail(`卡費紀錄指向不存在的信用卡（${r.dueYm}）`)
+    if (r.noBill && r.paidDate) fail(`卡費紀錄不能同時標記已繳與無須繳（${r.dueYm}）`)
+  }
   const cardSourceCount = new Map<string, number>()
   for (const s of data.sources) {
     if (s.kind === 'card') {
@@ -198,15 +205,21 @@ export function validateBackup(raw: string): ValidationResult {
   for (const o of data.occurrences) {
     if (!templateIds.has(o.templateId)) fail(`繳費紀錄指向不存在的固定支出（${o.periodKey}）`)
     if (o.sourceId && !sourceIds.has(o.sourceId)) fail(`繳費紀錄的扣款來源不存在（${o.periodKey}）`)
+    if (o.baseline?.sourceId && !sourceIds.has(o.baseline.sourceId)) fail(`繳費紀錄的原設定來源不存在（${o.periodKey}）`)
     if (o.periodYm !== null && o.periodKey !== o.periodYm) fail(`繳費紀錄的期別不一致（${o.periodKey}）`)
     if (o.status === 'confirmed') {
-      if (o.actualDate === null || o.amount === null) fail(`已確認的繳費紀錄缺少日期或金額（${o.periodKey}）`)
-      else if (o.actualYm !== o.actualDate.slice(0, 7)) fail(`繳費紀錄的實際月份與日期不一致（${o.periodKey}）`)
+      const source = o.sourceId ? data.sources.find((s) => s.id === o.sourceId) : undefined
+      if (o.amount === null || o.actualYm === null || (source?.kind !== 'card' && o.actualDate === null))
+        fail(`已確認的繳費紀錄缺少日期或金額（${o.periodKey}）`)
+      else if (o.actualDate && o.actualYm !== o.actualDate.slice(0, 7) && !(source?.kind === 'card' && o.periodYm))
+        fail(`繳費紀錄的實際月份與日期不一致（${o.periodKey}）`)
     }
   }
   for (const e of data.extras) {
     if (e.sourceId && !sourceIds.has(e.sourceId)) fail(`額外消費「${e.name}」的付款方式不存在`)
-    if (e.ym !== e.date.slice(0, 7)) fail(`額外消費「${e.name}」的月份與日期不一致`)
+    const source = e.sourceId ? data.sources.find((s) => s.id === e.sourceId) : undefined
+    if (e.date === null && source?.kind !== 'card') fail(`額外消費「${e.name}」缺少付款日期`)
+    if (e.date !== null && source?.kind !== 'card' && e.ym !== e.date.slice(0, 7)) fail(`額外消費「${e.name}」的月份與日期不一致`)
   }
   for (const s of data.settings) {
     if (s.key === 'lastBackupAt' && !(typeof s.value === 'number' && Number.isFinite(s.value))) fail('設定「上次備份時間」格式錯誤')
@@ -216,7 +229,7 @@ export function validateBackup(raw: string): ValidationResult {
   const counts = Object.fromEntries(TABLE_NAMES.map((n) => [n, data[n].length])) as Record<keyof BackupTables, number>
   return {
     ok: true,
-    // v1 已在 upgradeV1 轉成 v2 的內容，所以一律以目前版本回傳
+    // 舊版已在上方補齊欄位，以目前結構版本回傳。
     backup: { app: BACKUP_APP_ID, schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: String(obj.exportedAt ?? ''), data },
     counts,
   }

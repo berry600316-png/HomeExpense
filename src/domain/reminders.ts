@@ -43,9 +43,10 @@ export function computeReminders(today: YMD, cards: CreditCard[], bills: CardBil
     const back = Math.min(MAX_LOOKBACK_MONTHS, Math.max(0, monthsBetween(fromYm, thisYm)))
     for (let i = -back; i <= 2; i++) {
       const dueYm = addMonths(thisYm, i)
-      if (card.endYm !== null && dueYm >= card.endYm) continue
+      // 停用後仍可能有最後一期卡費；保留至停用月份的下一個月。
       const bill = billMap.get(`${card.id}|${dueYm}`)
-      if (bill?.paidDate) continue
+      if (card.endYm !== null && dueYm > addMonths(card.endYm, 1) && !bill?.dueDateOverride) continue
+      if (bill?.paidDate || bill?.noBill) continue
       const dueDate = billDueDate(card, dueYm, bill)
       if (dueDate === null) continue
       if (card.dueFrom !== null && dueDate < card.dueFrom) continue

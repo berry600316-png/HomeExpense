@@ -141,6 +141,37 @@ describe('#19 還原失敗時既有資料不受損', () => {
   })
 })
 
+describe('新版信用卡月份備份相容性', () => {
+  it('舊 v2 備份仍可驗證並還原', async () => {
+    await seed(d)
+    const raw = await exportAll(d)
+    const v = validateBackup(JSON.stringify({ ...raw, schemaVersion: 2 }))
+    expect(v.ok).toBe(true)
+    if (!v.ok) return
+    expect(v.backup.schemaVersion).toBe(BACKUP_SCHEMA_VERSION)
+    const other = open(`t-backup-legacy-${n}`)
+    await restoreAll(v.backup, other)
+    expect((await other.cards.count())).toBe((await d.cards.count()))
+  })
+
+  it('無刷卡日期、信用卡額外消費與本月無須繳可完整往返', async () => {
+    const c = await repo.createCard({ name: '信用卡', bank: '', tag: '', dueDay: 13, note: '', startYm: '2026-06' }, TODAY, d)
+    const source = (await d.sources.where('cardId').equals(c.id).first())!
+    const t = await repo.createTemplate({ name: '水費', kind: 'general', defaultSourceId: source.id, amountMode: 'fixed', defaultAmount: 100, cycleMonths: 1, anchorYm: '2026-06', anchorDay: null, startYm: '2026-06', note: '' }, null, d)
+    await repo.confirmOccurrence({ templateId: t.id, periodYm: '2026-06', actualDate: null, amount: 100, sourceId: source.id, inCardTotal: true, note: '' }, d)
+    await repo.saveExtra({ name: '餐費', amount: 50, date: null, ym: '2026-06', sourceId: source.id, note: '' }, null, d)
+    await repo.markBillNoPayment(c.id, '2026-07', true, d)
+    const v = validateBackup(JSON.stringify(await exportAll(d)))
+    expect(v.ok).toBe(true)
+    if (!v.ok) return
+    const other = open(`t-backup-new-${n}`)
+    await restoreAll(v.backup, other)
+    expect((await other.occurrences.toArray())[0]?.actualDate).toBeNull()
+    expect((await other.extras.toArray())[0]?.date).toBeNull()
+    expect((await other.cardBills.toArray())[0]?.noBill).toBe(true)
+  })
+})
+
 describe('備份結構 v2：提前天數存在每張卡', () => {
   /** 把目前的備份改造成舊版（v1）格式：卡片沒有 remindDays，天數在 settings。 */
   async function v1Json(legacy: unknown) {
